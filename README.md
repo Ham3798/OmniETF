@@ -23,3 +23,4 @@ OmniETF는 여러 체인에 분산된 자산 상태를 하나의 인덱스 토�
 
 - Slidev 원본: `slides.md`
 - PPTX 출력: `OmniETF.pptx`
+- PDF 출력: `OmniETF.pdf`
