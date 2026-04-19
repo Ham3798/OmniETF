@@ -1,0 +1,15 @@
+{
+  "name": "omnietf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "slides:dev": "slidev slides.md",
+    "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF"
+  },
+  "devDependencies": {
+    "@slidev/cli": "^52.14.2",
+    "@slidev/theme-default": "^0.25.0",
+    "playwright-chromium": "^1.59.1"
+  }
+}
