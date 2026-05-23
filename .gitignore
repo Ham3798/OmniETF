@@ -1,5 +1,13 @@
 node_modules/
 .slidev/
 dist/
+cache/
+out/
+broadcast/
+.env
+.env.local
+.keys/
+.omnietf/
+.omx/
 ~$*.pptx
 .DS_Store

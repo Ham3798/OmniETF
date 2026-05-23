@@ -4,6 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "cctp:receive-solana": "node scripts/receive-cctp-solana.mjs",
+    "cctp:status": "node scripts/cctp-status.mjs",
+    "vault:demo": "node scripts/vault-demo.mjs",
+    "portfolio:allocate": "node scripts/portfolio.mjs allocate",
+    "portfolio:nav": "node scripts/portfolio.mjs nav",
+    "portfolio:redeem": "node scripts/portfolio.mjs redeem",
+    "portfolio:test": "node scripts/portfolio-self-test.mjs",
+    "xstock:setup": "node scripts/xstock-devnet.mjs setup",
+    "xstock:allocate": "node scripts/xstock-devnet.mjs allocate",
+    "xstock:balances": "node scripts/xstock-devnet.mjs balances",
+    "demo:e2e": "node scripts/demo-e2e.mjs",
     "slides:dev": "slidev slides.md",
     "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF"
   },
@@ -11,5 +22,10 @@
     "@slidev/cli": "^52.14.2",
     "@slidev/theme-default": "^0.25.0",
     "playwright-chromium": "^1.59.1"
+  },
+  "dependencies": {
+    "@solana-program/system": "^0.12.0",
+    "@solana-program/token": "^0.13.0",
+    "@solana/kit": "^6.9.0"
   }
 }

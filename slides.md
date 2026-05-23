@@ -1,6 +1,6 @@
 ---
 theme: default
-title: OmniETF - CCIP 기반 멀티체인 인덱스 ETF
+title: OmniETF - CCTP 기반 멀티체인 인덱스 ETF
 layout: cover
 transition: fade
 exportFilename: OmniETF
@@ -82,14 +82,14 @@ fonts:
 
 # OmniETF
 
-## CCIP 기반 멀티체인 인덱스 ETF
+## CCTP 기반 멀티체인 인덱스 ETF
 
 여러 체인에 흩어진 reserve를  
 하나의 mintable / redeemable share로 묶을 수 있는가?
 
 <!--
 발표자 노트:
-이 발표의 핵심은 "CCIP를 써봤다"가 아닙니다.
+이 발표의 핵심은 "브릿지를 써봤다"가 아닙니다.
 핵심 질문은 "여러 체인에 분산된 자산 상태가 하나의 금융 객체처럼 동작할 수 있는가"입니다.
 저희는 멀티체인 reserve를 하나의 OmniETF share로 발행, 보유, 환급하는 구조를 PoC로 검증하려고 합니다.
 -->
@@ -197,25 +197,25 @@ layout: two-cols
 layout: default
 ---
 
-# 왜 CCIP인가
+# 왜 CCTP와 Async Vault인가
 
-- arbitrary messaging으로 체인 간 상태 업데이트 전달
-- token transfer와 메시지를 함께 설계 가능
+- CCTP는 USDC settlement rail로 사용
+- CCIP는 향후 arbitrary messaging control plane 후보
+- 핵심은 token transfer보다 reserve state finalization
 - 비동기 cross-chain settlement를 전제로 한 구조
-- receiver에서 source chain, sender, router 검증 가능
 
 ```mermaid
 flowchart LR
-  A["Manager Chain"] -->|"ccipSend: allocation / state request"| B["Satellite Chain"]
-  B -->|"ack: reserve snapshot"| A
+  A["Base Manager"] -->|"CCTP: USDC settlement"| B["Solana Reserve"]
+  B -->|"report: execution snapshot"| A
   A --> C["Canonical share value"]
 ```
 
 <!--
 발표자 노트:
-Chainlink CCIP는 단순 토큰 브릿지가 아니라 arbitrary messaging, token transfer, programmable token transfer를 지원합니다.
-공식 문서에서도 index rebalancing 같은 use case가 언급됩니다.
-저희에게 CCIP는 자산을 그냥 옮기는 도구가 아니라, 상태 동기화와 settlement instruction을 전달하는 control plane입니다.
+현재 구현은 CCTP를 실제 settlement rail로 사용합니다.
+CCIP는 arbitrary messaging이 필요한 다음 단계의 control plane 후보로 남깁니다.
+중요한 것은 어떤 브릿지 하나가 아니라 cross-chain execution 결과가 Base의 canonical share value에 안전하게 반영되는 구조입니다.
 -->
 
 ---
@@ -246,11 +246,13 @@ layout: default
 | ERC-7540 | 비동기 deposit / redeem 요청 흐름 | cross-chain basket 자체는 정의하지 않음 |
 | ERC-7575 | 여러 asset / entry point가 하나의 share 공유 | 체인 간 reserve accounting은 별도 문제 |
 | ERC-7621 | basket token, weight, rebalance 개념 | cross-chain execution layer는 구현 관심사 |
+| SPL Token | Solana reserve asset custody | issuer-backed xStock은 mainnet 범위 |
+| CCTP | Base USDC → Solana USDC settlement | arbitrary state messaging은 별도 필요 |
 
 <!--
 발표자 노트:
 딥리서치 결과상 이 표준들 중 cross-chain basket-share issuance를 직접 정의하는 완성된 표준은 찾기 어렵습니다.
-그래서 가장 정확한 표현은 "인접 표준의 share semantics, async lifecycle, basket logic을 CCIP 기반 cross-chain accounting으로 확장하는 PoC"입니다.
+그래서 가장 정확한 표현은 "ERC-4626의 share semantics를 ERC-7540 async lifecycle과 ERC-7621 basket semantics로 확장한 cross-chain reserve accounting PoC"입니다.
 -->
 
 ---
@@ -304,21 +306,21 @@ layout: default
 flowchart LR
   U["User"] -->|"deposit / redeem"| M["Manager Chain\nETF Manager"]
   M -->|"mint / burn"| Y["OmniETF Share"]
-  M -->|"CCIP message"| R1["Receiver A\nReserve Ledger"]
-  M -->|"CCIP message"| R2["Receiver B\nReserve Ledger"]
-  R1 -->|"ack / snapshot"| M
-  R2 -->|"ack / snapshot"| M
+  M -->|"CCTP: USDC settlement"| R["Solana\nSPL Reserve"]
+  R -->|"mock xStock custody"| X["AAPLx / TSLAx / NVDAx"]
+  R -->|"reporter snapshot"| M
   P["Price Feeds"] --> M
 ```
 
 - Manager Chain: total supply, target weight, valuation, mint / burn 결정
-- Satellite Chain: local reserve ledger, trusted CCIP message 처리
-- CCIP: allocation instruction, state sync, acknowledgement 전달
+- Solana Reserve: SPL token custody, basket execution 결과 보관
+- CCTP: Base USDC를 Solana reserve capital로 이동
+- Reporter: Solana execution snapshot을 Base finalization에 반영
 
 <!--
 발표자 노트:
 Manager contract는 총 공급량, 목표 비중, 가치 평가 snapshot, mint/burn 결정을 담당합니다.
-각 satellite chain은 local reserve ledger와 receiver contract를 가지고, 신뢰된 CCIP 메시지만 처리합니다.
+Solana 쪽은 local reserve ledger와 SPL token account를 가지고, reporter가 실행 결과 snapshot을 Base에 반영합니다.
 valuation은 reserve balances와 외부 price input을 이용해 하나의 accounting unit으로 정규화합니다.
 -->
 
@@ -328,12 +330,12 @@ layout: two-cols
 
 # Deposit Flow
 
-1. 사용자가 manager chain에 자산 예치
-2. manager가 목표 index weight 계산
-3. CCIP로 satellite chain에 allocation message 전송
-4. reserve snapshot acknowledgement 수신
-5. global basket value 계산
-6. OmniETF share 발행
+1. 사용자가 Base에서 deposit request
+2. CCTP로 USDC를 Solana reserve에 전송
+3. Solana에서 mock xStock SPL basket 실행
+4. reporter가 executed value를 Base에 보고
+5. NAV before deposit 기준 share 계산
+6. 그때 OmniETF share 발행
 
 ::right::
 
@@ -341,16 +343,16 @@ layout: two-cols
 
 1. 사용자가 OmniETF 환급 요청
 2. share burn 또는 escrow
-3. satellite chain settlement message 전송
-4. reserve 상태 정산
-5. acknowledgement 수신
-6. claimable 상태에서 환급 완료
+3. Solana basket 매도 / USDC 확보
+4. CCTP로 Base에 USDC 정산
+5. reporter가 claimable value 확정
+6. 사용자 claim 완료
 
 <!--
 발표자 노트:
-입금은 즉시 mint보다 "상태 반영 후 mint"로 설명하는 편이 안전합니다.
-환급은 ERC-7540의 async request model에 가깝습니다.
-cross-chain settlement는 본질적으로 비동기이므로 pending, claimable 같은 상태를 두는 것이 설계상 더 자연스럽습니다.
+입금은 즉시 mint하지 않습니다.
+cross-chain execution 전에는 CCTP fee, execution result, slippage를 알 수 없기 때문입니다.
+따라서 ERC-7540의 async request model처럼 request와 finalize를 분리합니다.
 -->
 
 ---
@@ -392,11 +394,11 @@ layout: two-cols
 
 # 이번 데모에서 보여줄 것
 
-- fixed weight basket
-- 예시 비중 50 : 30 : 20
-- mocked / pre-funded reserve 상태 동기화
-- manager chain에서 OmniETF mint / burn
-- redeem request lifecycle 검증
+- Base → Solana CCTP USDC settlement
+- Solana devnet mock xStock SPL custody
+- AAPLx / TSLAx / NVDAx = 40 : 30 : 30
+- Base async vault에서 mETF finalize mint
+- redeem request quote lifecycle 검증
 
 ::right::
 
@@ -404,7 +406,7 @@ layout: two-cols
 
 <div class="small">
   <div class="pill">Pending</div>
-  <div class="my-2 muted">CCIP ack received</div>
+  <div class="my-2 muted">settlement snapshot received</div>
   <div class="pill">Acknowledged</div>
   <div class="my-2 muted">valuation finalized</div>
   <div class="pill">Claimable</div>
@@ -415,7 +417,7 @@ layout: two-cols
 <!--
 발표자 노트:
 회의록의 예시처럼 "ETH 5, BTC 1이 교환비에 따라 1 OmniETF가 된다"는 아이디어를 더 시스템적으로 표현하면 fixed weight basket과 canonical share value입니다.
-처음에는 실제 모든 자산 이동보다 state aggregation을 먼저 검증하고, 그 다음 programmable token transfer를 붙이는 순서가 좋습니다.
+현재 데모는 USDC settlement와 Solana SPL reserve custody까지 온체인으로 보여주고, issuer-backed xStock swap은 다음 단계로 남깁니다.
 -->
 
 ---
@@ -426,19 +428,16 @@ layout: default
 
 | 단계 | 목표 | 산출물 |
 |---|---|---|
-| 1 | basket / share value 정의 | weight, valuation formula |
-| 2 | CCIP payload 설계 | allocation, snapshot, acknowledgement |
-| 3 | contract PoC | Manager + Receiver |
-| 4 | 테스트넷 검증 | Arbitrum Sepolia / Avalanche Fuji / Base Sepolia 후보 |
-| 5 | 발표 데모 | deposit, sync, mint, redeem 시나리오 |
+| 1 | CCTP settlement | Base Sepolia → Solana devnet USDC |
+| 2 | Solana SPL reserve | mock AAPLx / TSLAx / NVDAx treasury |
+| 3 | Async vault | requestDeposit / finalizeDeposit / mETF |
+| 4 | NAV accounting | executed value 기준 share mint |
+| 5 | 발표 데모 | deposit, execute, finalize, redeem quote |
 
 <!--
 발표자 노트:
-현재는 역할 분담 및 심층 리서치 단계입니다.
-CCIP 파트는 ccipSend payload와 receiver validation을 분석하고,
-표준 파트는 ERC-4626, 7540, 7575, 7621을 비교하며,
-유사 프로젝트 분석은 단일 도메인 인덱스/바스켓 구조와 차별점을 정리합니다.
-다음 단계는 아키텍처 확정 후 PoC contract 구현입니다.
+현재 PoC는 CCTP와 Solana SPL custody, 그리고 Base async vault를 연결하는 방향입니다.
+표준 파트는 ERC-4626 수식을 그대로 가져오되, 실행 타이밍 문제 때문에 ERC-7540식 request/finalize lifecycle을 채택합니다.
 -->
 
 ---
@@ -452,7 +451,7 @@ share value를 어떻게 방어 가능하게 정의하느냐입니다.
 
 <!--
 발표자 노트:
-심사자들이 물을 가능성이 높은 지점은 "CCIP 메시지가 가나요?"보다 "이 share value가 정말 믿을 수 있나요?"입니다.
+심사자들이 물을 가능성이 높은 지점은 "메시지가 가나요?"보다 "이 share value가 정말 믿을 수 있나요?"입니다.
 그래서 valuation, oracle, 초기 가격 조작, message failure, token selection 문제를 미리 인정하고 범위를 제한해야 합니다.
 -->
 
@@ -476,13 +475,13 @@ layout: two-cols
 - virtual shares 또는 seeded liquidity 고려
 - internal reserve accounting 사용
 - static weight 또는 제한된 rebalance
-- source chain, sender, router 검증
+- settlement tx, reporter, token account 검증
 
 <!--
 발표자 노트:
 ERC-7621과 ERC-4626 관련 문서 모두 초기 가격 조작, donated asset, preview function misuse 같은 문제를 경고합니다.
 그래서 PoC에서는 단순 자산 allowlist, 내부 회계, 외부 price input, 제한된 rebalance로 범위를 좁히는 것이 설득력 있습니다.
-CCIP receiver에서는 source chain, sender, router 검증을 기본 전제로 둡니다.
+CCTP settlement tx, Solana token account, reporter authority 검증을 기본 전제로 둡니다.
 -->
 
 ---
@@ -512,7 +511,7 @@ layout: section
 <!--
 발표자 노트:
 발표의 마지막 파트에서는 결과물을 명확하게 말합니다.
-사용자는 manager chain에서 예치하고, CCIP를 통해 satellite chain 상태가 반영되고, 하나의 OmniETF share가 발행되며, 환급 요청도 비동기 상태 머신으로 처리됩니다.
+사용자는 Base에서 예치하고, CCTP settlement와 Solana execution snapshot이 반영된 뒤 하나의 OmniETF share를 받으며, 환급 요청도 비동기 상태 머신으로 처리됩니다.
 -->
 
 ---
@@ -522,7 +521,7 @@ layout: default
 # 최종 메시지
 
 - 문제: 멀티체인 자산은 흩어져 있지만 사용자는 하나의 투자 단위를 원함
-- 접근: CCIP로 reserve 상태를 동기화하고 manager chain에서 canonical share value 계산
+- 접근: CCTP로 USDC를 이동하고 reporter가 Solana reserve snapshot을 Base canonical share value에 반영
 - 차별점: 단일 체인 vault가 아니라 cross-chain basket-share accounting
 - PoC 목표: one supply, one value, one redeemable claim 검증
 
@@ -533,7 +532,7 @@ Cross-chain reserves can behave like one financial object onchain.
 <!--
 발표자 노트:
 마무리는 간단하게 가져가면 됩니다.
-저희는 CCIP를 활용해 멀티체인 reserve 상태를 하나의 share value로 수렴시키고,
+저희는 CCTP settlement와 reporter finalization을 활용해 멀티체인 reserve 상태를 하나의 share value로 수렴시키고,
 그 결과를 바탕으로 발행과 환급이 가능한 OmniETF share 구조를 검증합니다.
 즉 "멀티체인 자산을 하나의 투자 객체로 추상화할 수 있는가"에 대한 PoC입니다.
 -->
@@ -551,8 +550,8 @@ Q&A
 예상 질문:
 1. 왜 ERC-4626이 아닌가?
 답: 4626은 단일 underlying ERC-20 vault라서 share semantics의 참고점일 뿐입니다. 저희 문제는 cross-chain basket accounting입니다.
-2. 왜 CCIP인가?
-답: arbitrary messaging, token transfer, programmable token transfer를 모두 고려할 수 있고, cross-chain state machine을 만들기에 적합합니다.
+2. 왜 CCTP인가?
+답: 이번 PoC의 실제 자본 이동은 USDC settlement가 핵심이므로 Circle CCTP가 가장 직접적인 rail입니다. CCIP는 다음 단계의 arbitrary messaging control plane 후보입니다.
 3. 초기 PoC 범위는?
 답: state aggregation, share value 계산, mint/burn, async redeem lifecycle 검증입니다.
 -->
