@@ -1,0 +1,4 @@
+# Ignore foundry generated artifacts and sensitive run outputs
+/cache/
+/broadcast/
+.env
