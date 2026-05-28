@@ -24,3 +24,35 @@ OmniETF는 여러 체인에 분산된 자산 상태를 하나의 인덱스 토�
 - Slidev 원본: `slides.md`
 - PPTX 출력: `OmniETF.pptx`
 - PDF 출력: `OmniETF.pdf`
+
+## Local demos
+
+### EVM-only mock
+
+```bash
+npm install
+npm run test:contracts
+npm run demo:local
+```
+
+### Local EVM↔SVM PoC
+
+```bash
+npm run demo:cross-local
+```
+
+This starts Anvil, `solana-test-validator`, the native SVM portfolio program, the trusted local relayer, and the Vite UI. Open `http://localhost:5173`.
+
+Stop background services:
+
+```bash
+npm run stop:local
+```
+
+Smoke test after local deployments are running:
+
+```bash
+npm run smoke:cross-local
+```
+
+See `docs/local-evm-svm.md` for details and trust-boundary notes.
