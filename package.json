@@ -5,11 +5,40 @@
   "type": "module",
   "scripts": {
     "slides:dev": "slidev slides.md",
-    "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF"
+    "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF",
+    "test:contracts": "cd contracts && forge test",
+    "demo:local": "./scripts/demo-local.sh",
+    "dev:anvil": "anvil --chain-id 31337 --host 127.0.0.1 --port 8545",
+    "build:contracts": "cd contracts && forge build",
+    "deploy:local": "npm run build:contracts && tsx scripts/deploy-local.ts",
+    "web:dev": "vite apps/web --config apps/web/vite.config.ts --host 0.0.0.0",
+    "build:web": "tsc -p apps/web/tsconfig.json --noEmit && vite build apps/web --config apps/web/vite.config.ts",
+    "demo:web": "./scripts/frontend-local.sh",
+    "build:svm": "cargo-build-sbf --manifest-path programs/omnietf-portfolio/Cargo.toml",
+    "dev:solana": "solana-test-validator --reset --quiet",
+    "deploy:svm": "tsx scripts/deploy-svm.ts",
+    "relayer:local": "tsx scripts/relayer-local.ts",
+    "relay:once": "tsx scripts/relayer-local.ts --once",
+    "smoke:cross-local": "tsx scripts/cross-smoke.ts",
+    "demo:cross-local": "./scripts/cross-local.sh",
+    "stop:local": "./scripts/stop-local.sh"
   },
   "devDependencies": {
     "@slidev/cli": "^52.14.2",
     "@slidev/theme-default": "^0.25.0",
-    "playwright-chromium": "^1.59.1"
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "concurrently": "^9.2.1",
+    "playwright-chromium": "^1.59.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.3"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "viem": "^2.51.0"
   }
 }

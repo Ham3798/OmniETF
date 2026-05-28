@@ -1,0 +1,11 @@
+[package]
+name = "omnietf-portfolio"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "omnietf_portfolio"
+
+[dependencies]
+solana-program = "3.0.0"

@@ -3,3 +3,14 @@ node_modules/
 dist/
 ~$*.pptx
 .DS_Store
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+test-ledger/
+programs/**/target/
+deployments/local.json
+deployments/svm-local.json
+deployments/solana-payer.json
+**/node_modules/
+apps/web/dist/
+.omx/
