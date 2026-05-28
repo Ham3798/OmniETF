@@ -1,0 +1,283 @@
+{
+  "name": "Tally -> Gemini -> Kakao Memo (Self)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tally-gemini-kakao-self",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Tally Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction readField(root, aliases) {\n  const aliasSet = new Set(aliases.map((v) => String(v).toLowerCase()));\n\n  for (const alias of aliases) {\n    if (root?.[alias] !== undefined && root?.[alias] !== null && root?.[alias] !== '') {\n      return root[alias];\n    }\n  }\n\n  const fields = root?.fields;\n  if (Array.isArray(fields)) {\n    for (const field of fields) {\n      const candidates = [field?.key, field?.label, field?.name, field?.title]\n        .filter(Boolean)\n        .map((v) => String(v).toLowerCase());\n      if (candidates.some((candidate) => aliasSet.has(candidate))) {\n        if (field?.value !== undefined) return field.value;\n        if (field?.answer?.value !== undefined) return field.answer.value;\n        if (field?.answer !== undefined) return field.answer;\n      }\n    }\n  }\n\n  return '';\n}\n\nreturn items.map((item) => {\n  const incoming = item.json?.data ?? item.json;\n  const responseId = incoming?.responseId ?? incoming?.submissionId ?? item.json?.id ?? `resp-${Date.now()}`;\n  const name = String(readField(incoming, ['name', 'customer_name', '이름'])).trim();\n  const product = String(readField(incoming, ['product', 'service', '상품', '서비스'])).trim();\n  const theme = String(readField(incoming, ['theme', 'mood', '분위기', '컨셉'])).trim();\n  const extraPrompt = String(readField(incoming, ['extra_prompt', 'prompt', '추가 요청', '요청사항'])).trim();\n  const phone = String(readField(incoming, ['phone', 'mobile', '전화번호'])).replace(/\\D/g, '');\n\n  const config = {\n    baseBioPrompt: $env.BASE_BIO_PROMPT || '브랜드 톤: premium, warm, modern',\n    geminiApiKey: $env.GEMINI_API_KEY || '',\n    cloudinaryCloudName: $env.CLOUDINARY_CLOUD_NAME || '',\n    cloudinaryUploadPreset: $env.CLOUDINARY_UPLOAD_PRESET || '',\n    cloudinaryFolder: $env.CLOUDINARY_FOLDER || 'tally-gemini-kakao',\n    kakaoRestApiKey: $env.KAKAO_REST_API_KEY || '',\n    kakaoClientSecret: $env.KAKAO_CLIENT_SECRET || '',\n    kakaoRefreshToken: $env.KAKAO_REFRESH_TOKEN || '',\n    resultLinkBaseUrl: $env.RESULT_LINK_BASE_URL || '',\n    kakaoMessageTitle: $env.KAKAO_MESSAGE_TITLE || '맞춤 이미지가 생성되었습니다',\n    kakaoMessageDescription: $env.KAKAO_MESSAGE_DESCRIPTION || 'Tally 제출 결과를 확인해보세요.'\n  };\n\n  const missing = Object.entries({\n    GEMINI_API_KEY: config.geminiApiKey,\n    CLOUDINARY_CLOUD_NAME: config.cloudinaryCloudName,\n    CLOUDINARY_UPLOAD_PRESET: config.cloudinaryUploadPreset,\n    KAKAO_REST_API_KEY: config.kakaoRestApiKey,\n    KAKAO_REFRESH_TOKEN: config.kakaoRefreshToken\n  }).filter(([, value]) => !value).map(([key]) => key);\n\n  if (missing.length) {\n    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);\n  }\n\n  const prompt = [\n    config.baseBioPrompt,\n    `고객명: ${name || '미입력'}`,\n    `상품/서비스: ${product || '미입력'}`,\n    `희망 분위기: ${theme || '미입력'}`,\n    `추가 요청: ${extraPrompt || '없음'}`,\n    '텍스트 오버레이 없이, 4:3 비율, 광고 크리에이티브 느낌, 선명한 디테일, 카카오톡 공유에 적합한 800x600 구도'\n  ].join('\\n');\n\n  return {\n    json: {\n      responseId,\n      name,\n      phone,\n      product,\n      theme,\n      extraPrompt,\n      prompt,\n      ...config\n    }\n  };\n});"
+      },
+      "id": "2",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{$json.geminiApiKey}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } } }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Generate Gemini Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map((item) => {\n  const original = item.json;\n  const parts = original?.candidates?.[0]?.content?.parts ?? [];\n  const imagePart = parts.find((part) => part?.inlineData?.data);\n  const textPart = parts.find((part) => part?.text);\n\n  if (!imagePart) {\n    throw new Error('Gemini response did not include inline image data.');\n  }\n\n  const previous = $items('Prepare Input', 0, item.pairedItem?.item ?? 0)?.[0]?.json ?? {};\n\n  return {\n    json: {\n      ...previous,\n      modelText: textPart?.text || ''\n    },\n    binary: {\n      image: {\n        data: imagePart.inlineData.data,\n        mimeType: imagePart.inlineData.mimeType || 'image/png',\n        fileName: `${previous.responseId || 'generated'}-image`\n      }\n    },\n    pairedItem: item.pairedItem\n  };\n});"
+      },
+      "id": "4",
+      "name": "Extract Image Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cloudinary.com/v1_1/{{$json.cloudinaryCloudName}}/image/upload",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "upload_preset",
+              "value": "={{$json.cloudinaryUploadPreset}}"
+            },
+            {
+              "name": "folder",
+              "value": "={{$json.cloudinaryFolder}}"
+            },
+            {
+              "name": "public_id",
+              "value": "={{$json.responseId}}"
+            },
+            {
+              "name": "file",
+              "value": "={{'data:' + $binary.image.mimeType + ';base64,' + $binary.image.data}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Upload To Cloudinary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://kauth.kakao.com/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "client_id",
+              "value": "={{$items('Prepare Input', 0, $itemIndex)[0].json.kakaoRestApiKey}}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{$items('Prepare Input', 0, $itemIndex)[0].json.kakaoRefreshToken}}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{$items('Prepare Input', 0, $itemIndex)[0].json.kakaoClientSecret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Refresh Kakao Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const uploads = $items('Upload To Cloudinary');\nconst tokens = $input.all();\n\nreturn tokens.map((tokenItem, index) => {\n  const tokenJson = tokenItem.json;\n  const source = uploads[index]?.json ?? {};\n  const prepared = $items('Prepare Input', 0, index)?.[0]?.json ?? {};\n\n  if (!source.secure_url) {\n    throw new Error('Cloudinary upload did not return secure_url.');\n  }\n\n  const resultUrl = prepared.resultLinkBaseUrl\n    ? `${prepared.resultLinkBaseUrl.replace(/\\/$/, '')}/${prepared.responseId}`\n    : source.secure_url;\n\n  const templateObject = {\n    object_type: 'feed',\n    content: {\n      title: prepared.kakaoMessageTitle,\n      description: prepared.kakaoMessageDescription,\n      image_url: source.secure_url,\n      image_width: 800,\n      image_height: 600,\n      link: {\n        web_url: resultUrl,\n        mobile_web_url: resultUrl\n      }\n    },\n    buttons: [\n      {\n        title: '이미지 보기',\n        link: {\n          web_url: resultUrl,\n          mobile_web_url: resultUrl\n        }\n      }\n    ]\n  };\n\n  return {\n    json: {\n      ...prepared,\n      uploadedImageUrl: source.secure_url,\n      resultUrl,\n      kakaoAccessToken: tokenJson.access_token,\n      kakaoTemplateObject: JSON.stringify(templateObject)\n    }\n  };\n});"
+      },
+      "id": "7",
+      "name": "Build Kakao Memo Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $json.kakaoAccessToken}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template_object",
+              "value": "={{$json.kakaoTemplateObject}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Send Kakao Memo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2060,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Tally Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Input": {
+      "main": [
+        [
+          {
+            "node": "Generate Gemini Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Gemini Image": {
+      "main": [
+        [
+          {
+            "node": "Extract Image Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Image Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload To Cloudinary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload To Cloudinary": {
+      "main": [
+        [
+          {
+            "node": "Refresh Kakao Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Kakao Token": {
+      "main": [
+        [
+          {
+            "node": "Build Kakao Memo Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Kakao Memo Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Kakao Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {},
+  "active": false,
+  "versionId": "8a196725-8cb5-4546-a891-f5cc2cce03b0",
+  "id": "tally-gemini-kakao-self"
+}

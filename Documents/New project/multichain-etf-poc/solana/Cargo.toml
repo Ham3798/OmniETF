@@ -1,0 +1,8 @@
+[package]
+name = "multichain-etf-solana-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "multichain_etf_solana_core"
+path = "src/lib.rs"

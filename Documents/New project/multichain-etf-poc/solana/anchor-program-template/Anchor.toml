@@ -1,0 +1,13 @@
+[features]
+seeds = true
+skip-lint = false
+
+[programs.localnet]
+multichain_etf = "EtF111111111111111111111111111111111111111"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "anchor test"

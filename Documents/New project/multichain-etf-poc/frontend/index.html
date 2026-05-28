@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multichain ETF PoC Console</title>
+    <link rel="stylesheet" href="/frontend/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop backdrop-one"></div>
+    <div class="backdrop backdrop-two"></div>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Base x Solana x ETF Vault</p>
+        <h1>Multichain ETF Mission Control</h1>
+        <p class="lede">
+          Base에서는 share accounting을, Solana에서는 execution을 담당하는 PoC를 브라우저에서 단계별로 확인할 수 있습니다.
+        </p>
+        <div class="hero-actions">
+          <button id="seed-deposit" class="button button-primary">1,000 USDC Deposit</button>
+          <button id="bridge-now" class="button">Relayer Process Next</button>
+          <button id="reset-state" class="button button-ghost">Reset Scenario</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel panel-live">
+          <div class="panel-head">
+            <h2>Live Base Sepolia</h2>
+            <span class="badge badge-soft">Wallet + Real Tx</span>
+          </div>
+          <p class="hint">
+            실제 Base Sepolia 지갑으로 `mint / approve / deposit / redeem / admin settle` 트랜잭션을 보낼 수 있습니다.
+          </p>
+          <div class="hero-actions">
+            <button id="live-connect-wallet" class="button button-primary">Connect Wallet</button>
+            <button id="live-switch-chain" class="button">Switch Base Sepolia</button>
+            <button id="live-refresh-state" class="button button-ghost">Refresh Reads</button>
+          </div>
+          <div class="live-meta">
+            <div class="metric">
+              <span>Status</span>
+              <strong id="live-wallet-status">지갑과 계약 주소를 준비해 주세요.</strong>
+            </div>
+            <div class="metric">
+              <span>Account</span>
+              <strong id="live-account">-</strong>
+            </div>
+            <div class="metric">
+              <span>Chain</span>
+              <strong id="live-chain">-</strong>
+            </div>
+            <div class="metric">
+              <span>Is Owner</span>
+              <strong id="live-owner">No</strong>
+            </div>
+          </div>
+          <div class="live-form">
+            <label class="field">
+              <span>MockUSDC address</span>
+              <input id="live-usdc-address" type="text" placeholder="0x..." />
+            </label>
+            <label class="field">
+              <span>MockBridge address</span>
+              <input id="live-bridge-address" type="text" placeholder="0x..." />
+            </label>
+            <label class="field">
+              <span>Vault address</span>
+              <input id="live-vault-address" type="text" placeholder="0x..." />
+            </label>
+            <button id="live-save-addresses" class="button">Save Addresses</button>
+          </div>
+          <div class="live-stats">
+            <div class="metric"><span>Wallet USDC</span><strong id="live-usdc-balance">-</strong></div>
+            <div class="metric"><span>Wallet mETF</span><strong id="live-share-balance">-</strong></div>
+            <div class="metric"><span>Allowance</span><strong id="live-allowance">-</strong></div>
+            <div class="metric"><span>Total Assets</span><strong id="live-total-assets">-</strong></div>
+            <div class="metric"><span>Base Idle</span><strong id="live-base-idle">-</strong></div>
+            <div class="metric"><span>Solana Managed</span><strong id="live-solana-managed">-</strong></div>
+            <div class="metric"><span>Reserved Redeem</span><strong id="live-reserved">-</strong></div>
+            <div class="metric"><span>Preview Deposit</span><strong id="live-preview-deposit">-</strong></div>
+            <div class="metric"><span>Preview Redeem</span><strong id="live-preview-redeem">-</strong></div>
+          </div>
+          <div class="live-actions-grid">
+            <section class="market-card action-card">
+              <h3>1. Faucet Mint</h3>
+              <label class="field">
+                <span>USDC amount</span>
+                <input id="live-faucet-amount" type="number" min="1" step="100" value="1000" />
+              </label>
+              <button id="live-mint-usdc" class="button button-primary">Mint Test USDC</button>
+            </section>
+            <section class="market-card action-card">
+              <h3>2. User Deposit</h3>
+              <label class="field">
+                <span>Deposit amount</span>
+                <input id="live-deposit-amount" type="number" min="1" step="100" value="1000" />
+              </label>
+              <div class="scenario-buttons">
+                <button id="live-approve-usdc" class="button">Approve USDC</button>
+                <button id="live-deposit-vault" class="button button-primary">Deposit To Vault</button>
+              </div>
+            </section>
+            <section class="market-card action-card">
+              <h3>3. User Redeem</h3>
+              <label class="field">
+                <span>Redeem shares</span>
+                <input id="live-redeem-shares" type="number" min="1" step="10" value="300" />
+              </label>
+              <button id="live-request-redeem" class="button button-danger">Request Redeem</button>
+            </section>
+            <section class="market-card action-card">
+              <h3>4. Admin Bridge</h3>
+              <label class="field">
+                <span>Bridge amount</span>
+                <input id="live-bridge-amount" type="number" min="1" step="100" value="1000" />
+              </label>
+              <label class="field">
+                <span>Action ID</span>
+                <input id="live-action-id" type="text" value="deposit-live" />
+              </label>
+              <button id="live-bridge-solana" class="button">Bridge To Solana</button>
+            </section>
+            <section class="market-card action-card">
+              <h3>5. Admin NAV Sync</h3>
+              <label class="field">
+                <span>Solana NAV</span>
+                <input id="live-nav-amount" type="number" min="1" step="10" value="1095" />
+              </label>
+              <button id="live-record-nav" class="button">Record Solana NAV</button>
+            </section>
+            <section class="market-card action-card">
+              <h3>6. Admin Settle</h3>
+              <label class="field">
+                <span>Redemption assets</span>
+                <input id="live-redemption-assets" type="number" min="1" step="1" value="328.5" />
+              </label>
+              <label class="field">
+                <span>Bridge message ID</span>
+                <input id="live-release-message-id" type="number" min="1" step="1" value="1" />
+              </label>
+              <label class="field">
+                <span>Release amount</span>
+                <input id="live-release-amount" type="number" min="1" step="1" value="328.5" />
+              </label>
+              <label class="field">
+                <span>Redemption ID</span>
+                <input id="live-settle-redemption-id" type="number" min="1" step="1" value="1" />
+              </label>
+              <div class="scenario-buttons">
+                <button id="live-prepare-redemption" class="button">Prepare Redemption</button>
+                <button id="live-release-bridge" class="button">Release From Bridge</button>
+                <button id="live-settle-redeem" class="button button-danger">Settle Redeem</button>
+              </div>
+            </section>
+          </div>
+        </article>
+
+        <article class="panel panel-emphasis">
+          <div class="panel-head">
+            <h2>Vault Snapshot</h2>
+            <span id="queue-badge" class="badge">Queue 0</span>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <span>Share Price</span>
+              <strong id="share-price">1.0000</strong>
+            </div>
+            <div class="metric">
+              <span>Total Shares</span>
+              <strong id="total-shares">0.00</strong>
+            </div>
+            <div class="metric">
+              <span>Active NAV</span>
+              <strong id="active-nav">0.00 USDC</strong>
+            </div>
+            <div class="metric">
+              <span>Reserved Redeem</span>
+              <strong id="reserved-nav">0.00 USDC</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Market Sync</h2>
+            <span class="badge badge-soft">Solana NAV</span>
+          </div>
+          <div class="scenario-buttons">
+            <button data-scenario="calm" class="button scenario">Calm</button>
+            <button data-scenario="bull" class="button scenario">Bull</button>
+            <button data-scenario="rotation" class="button scenario">Rotation</button>
+          </div>
+          <div class="market-grid" id="market-grid"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Redeem</h2>
+            <span class="badge badge-soft">Async Settlement</span>
+          </div>
+          <label class="field">
+            <span>Shares to redeem</span>
+            <input id="redeem-shares" type="number" min="1" step="10" value="300" />
+          </label>
+          <button id="queue-redeem" class="button button-danger">Queue Redeem</button>
+          <p class="hint">redeem는 즉시 지급이 아니라 relayer가 Solana liquidation과 bridge return을 처리한 뒤 settle됩니다.</p>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Solana Treasury</h2>
+            <span id="solana-nav" class="badge">0.00 USDC</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Weight</th>
+                <th>Price</th>
+                <th>Units</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody id="positions-body"></tbody>
+          </table>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Relayer Timeline</h2>
+            <span class="badge badge-soft">Bridge Queue</span>
+          </div>
+          <div id="timeline" class="timeline"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/frontend/app.mjs"></script>
+  </body>
+  </html>
