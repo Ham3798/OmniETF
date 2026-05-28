@@ -1,8 +1,0 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="TextLabel" parent="TextAppearance.Design.Hint">
-        <item name="android:textSize">12sp</item>
-    </style>
-
-    <style name="Theme.Flower" parent="Base.Theme.Flower" />
-</resources>
