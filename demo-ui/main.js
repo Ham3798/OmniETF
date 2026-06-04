@@ -38,6 +38,14 @@ const CCTP_DESTINATION = {
   mintAccount: "9y7ns4FyHSFscz5yvgAfchDVzr9VUsyDSx56VttABut",
 };
 
+const CCTP_FEE = {
+  sourceDomain: 6,
+  destinationDomain: 5,
+  fastFinalityThreshold: 1000,
+  bufferNumerator: 120n,
+  bufferDenominator: 100n,
+};
+
 const SESSION_TX_KEY = "omnietf.sessionTx.v1";
 const KNOWN_TOPICS = {
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef": "Transfer",
@@ -536,7 +544,6 @@ async function runLiveAction(action) {
   try {
     const depositAmount = inputValue("liveDepositAmount");
     const solanaRecipient = inputValue("liveSolanaRecipient");
-    const maxFee = inputValue("liveMaxFee");
     let claimAssets = inputValue("liveClaimAssets");
     let redeemShares = inputValue("liveRedeemShares");
     let txHash;
@@ -545,7 +552,9 @@ async function runLiveAction(action) {
       txHash = await approveUsdc(depositAmount);
       await recordEvmTx("Approve", txHash, { rail: "Base", note: `${depositAmount} USDC allowance` });
     } else if (action === "requestDeposit") {
-      writeLiveLog(`Submitting requestDeposit for ${depositAmount} USDC...`);
+      writeLiveLog(`Fetching current CCTP fee for ${depositAmount} USDC...`);
+      const maxFee = await resolveCctpMaxFee(depositAmount);
+      writeLiveLog(`Submitting requestDeposit for ${depositAmount} USDC...\nCCTP maxFee: ${maxFee} USDC`);
       txHash = await requestVaultDeposit(depositAmount, solanaRecipient, maxFee);
       await recordEvmTx("Buy", txHash, { rail: "Base/CCTP", note: `${depositAmount} USDC burn request` });
       state.lastDepositTx = txHash;
@@ -670,6 +679,47 @@ function updateActionAvailability(live) {
 
 function inputValue(id) {
   return document.getElementById(id).value.trim();
+}
+
+async function resolveCctpMaxFee(amountUsdc) {
+  const amountUnits = parseUsdcUnits(amountUsdc);
+  const configuredUnits = parseUsdcUnits(inputValue("liveMaxFee") || "0");
+  const quotedUnits = await quoteCctpFastMaxFeeUnits(amountUnits);
+  const maxFeeUnits = configuredUnits > quotedUnits ? configuredUnits : quotedUnits;
+  const maxFee = formatUnits(maxFeeUnits.toString());
+  document.getElementById("liveMaxFee").value = maxFee;
+  return maxFee;
+}
+
+async function quoteCctpFastMaxFeeUnits(amountUnits) {
+  try {
+    const fees = await fetchJson(
+      `https://iris-api-sandbox.circle.com/v2/burn/USDC/fees/${CCTP_FEE.sourceDomain}/${CCTP_FEE.destinationDomain}`,
+    );
+    const fastFee = fees.find((item) => Number(item.finalityThreshold) === CCTP_FEE.fastFinalityThreshold);
+    if (!fastFee) throw new Error("Fast CCTP fee not found");
+    return bufferedFeeUnits(amountUnits, Number(fastFee.minimumFee));
+  } catch {
+    return bufferedFeeUnits(amountUnits, 2);
+  }
+}
+
+function bufferedFeeUnits(amountUnits, feeBps) {
+  const bpsScaled = BigInt(Math.ceil(Number(feeBps) * 100));
+  const protocolFee = ceilDiv(amountUnits * bpsScaled, 1_000_000n);
+  return ceilDiv(protocolFee * CCTP_FEE.bufferNumerator, CCTP_FEE.bufferDenominator);
+}
+
+function parseUsdcUnits(value) {
+  const raw = String(value ?? "").trim();
+  if (!/^\d+(\.\d+)?$/.test(raw)) throw new Error(`Invalid USDC amount: ${value}`);
+  const [whole, fraction = ""] = raw.split(".");
+  if (fraction.length > 6) throw new Error(`Too many decimals for USDC amount: ${value}`);
+  return BigInt(whole + fraction.padEnd(6, "0"));
+}
+
+function ceilDiv(numerator, denominator) {
+  return (numerator + denominator - 1n) / denominator;
 }
 
 function writeLiveLog(message) {
