@@ -1,6 +1,7 @@
 node_modules/
 .slidev/
 dist/
+demo-dist/
 cache/
 out/
 broadcast/
@@ -9,5 +10,12 @@ broadcast/
 .keys/
 .omnietf/
 .omx/
+.vercel/
+demo-ui/*.png
+solana/**/target/
+solana/**/.anchor/
+solana/**/node_modules/
+solana/**/dist/
+solana/**/build/
 ~$*.pptx
 .DS_Store

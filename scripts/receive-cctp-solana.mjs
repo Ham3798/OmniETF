@@ -22,7 +22,7 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 await loadEnv();
 
 const SOURCE_DOMAIN = Number(process.env.SOURCE_DOMAIN ?? "6");
-const SOURCE_TX = process.env.CCTP_SOURCE_TX ?? process.argv[2];
+const SOURCE_TX = process.argv[2] ?? process.env.CCTP_SOURCE_TX;
 const SOLANA_RPC = process.env.SOLANA_RPC ?? "https://api.devnet.solana.com";
 const SOLANA_WS = process.env.SOLANA_WS ?? "wss://api.devnet.solana.com";
 const SOLANA_PRIVATE_KEY = process.env.SOLANA_PRIVATE_KEY;

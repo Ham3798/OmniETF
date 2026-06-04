@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OmniETF Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="demo">
+      <header class="topbar">
+        <strong>OmniETF</strong>
+        <div class="top-actions">
+          <button id="connectWalletButton">Wallet</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <h1>Approve → Buy → Claim → Redeem</h1>
+        <div class="metrics">
+          <div><span>NAV</span><strong id="navMetric">-</strong></div>
+          <div><span>Shares</span><strong id="sharesMetric">-</strong></div>
+          <div><span>Assets</span><strong id="assetsMetric">-</strong></div>
+        </div>
+      </section>
+
+      <section class="pipeline" id="pipeline"></section>
+
+      <section class="proofs">
+        <article>
+          <div class="proof-head"><span class="dot base"></span><strong>Base</strong></div>
+          <div id="walletState" class="wallet-state"><span>Wallet</span><strong>Disconnected</strong></div>
+          <div id="liveContractState" class="kv">
+            <div><span>Wallet USDC</span><strong>-</strong></div>
+            <div><span>mETF balance</span><strong>-</strong></div>
+            <div><span>Claimable</span><strong>-</strong></div>
+          </div>
+        </article>
+
+        <article>
+          <div class="proof-head"><span class="dot cctp"></span><strong>CCTP</strong></div>
+          <div id="settlementProofState" class="kv"><div><span>Status</span><strong>Idle</strong></div></div>
+        </article>
+
+        <article>
+          <div class="proof-head"><span class="dot solana"></span><strong>CCIP</strong></div>
+          <div id="solanaReserveState" class="kv">
+            <div><span>Program</span><strong>4Laat...R881</strong></div>
+            <div><span>Messages</span><strong>-</strong></div>
+            <div><span>Basket</span><strong>-</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="actions-panel">
+        <div class="trade">
+          <input id="liveDepositAmount" inputmode="decimal" value="0.1" aria-label="USDC amount" />
+          <button id="liveApproveButton">Approve</button>
+          <button id="liveRequestDepositButton">Buy</button>
+          <button id="liveClaimDepositButton">Claim</button>
+          <button id="liveRequestRedeemButton">Redeem</button>
+        </div>
+      </section>
+
+      <pre id="liveLog" class="log">Ready.</pre>
+
+      <section class="tx-stack">
+        <div class="stack-head">
+          <strong>Session tx</strong>
+          <button id="clearSessionButton" class="ghost" type="button">Clear</button>
+        </div>
+        <div id="sessionTxStack" class="tx-list"></div>
+      </section>
+
+      <section class="deployed">
+        <a href="https://sepolia.basescan.org/address/0x77cAea5FDF52fD0C59577ED4739D9A49588Ff25e" target="_blank" rel="noreferrer">Vault</a>
+        <a href="https://sepolia.basescan.org/address/0xD340cECB276600082546e7F161c1D577767BA89f" target="_blank" rel="noreferrer">CCIP Sender</a>
+        <a href="https://explorer.solana.com/address/CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe?cluster=devnet" target="_blank" rel="noreferrer">Circle CCTP</a>
+        <a href="https://explorer.solana.com/address/4LaatT5FGgWMkFfT3zLUSEnsaWegk52a2nEwk8VRR881?cluster=devnet" target="_blank" rel="noreferrer">Solana Program</a>
+      </section>
+
+      <div class="hidden-runtime">
+        <div id="updatedAt"></div>
+        <aside id="stageDetail"></aside>
+        <div id="ccipGrid"></div>
+        <div id="evidenceGrid"></div>
+        <div id="assetList"></div>
+        <div id="actions"></div>
+        <pre id="commandLog"></pre>
+        <div id="redeemQuote"></div>
+        <div id="vaultState"></div>
+        <input id="liveSolanaRecipient" value="0x024c1927845fdd40693bc10373ccd59e59301731f3833d3ec9cddc3e629c255b" />
+        <input id="liveMaxFee" value="0.0005" />
+        <input id="liveClaimAssets" value="" />
+        <input id="liveRedeemShares" value="" />
+        <input id="liveRedeemId" value="" />
+        <div id="codeTabs"></div>
+        <p id="codeFile"></p>
+        <h3 id="codeTitle"></h3>
+        <span id="codeLines"></span>
+        <p id="codeDescription"></p>
+        <code id="codeBlock"></code>
+      </div>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

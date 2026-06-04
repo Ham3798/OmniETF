@@ -1,7 +1,7 @@
 const env = await loadEnv();
 
 const sourceDomain = env.SOURCE_DOMAIN ?? "6";
-const tx = env.CCTP_SOURCE_TX ?? process.argv[2];
+const tx = process.argv[2] ?? env.CCTP_SOURCE_TX;
 if (!tx) {
   throw new Error("Set CCTP_SOURCE_TX or pass tx hash as first argument");
 }

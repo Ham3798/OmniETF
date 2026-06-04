@@ -5,18 +5,33 @@
   "type": "module",
   "scripts": {
     "cctp:receive-solana": "node scripts/receive-cctp-solana.mjs",
+    "cctp:burn-solana": "node scripts/burn-cctp-solana.mjs",
+    "cctp:receive-evm": "node scripts/receive-cctp-evm.mjs",
     "cctp:status": "node scripts/cctp-status.mjs",
+    "ccip:solana-custody": "node scripts/solana-custody.mjs",
+    "ccip:send-base-solana": "node scripts/ccip-send-base-to-solana.mjs",
+    "ccip:contract-base-solana": "node scripts/ccip-contract-base-solana.mjs",
     "vault:demo": "node scripts/vault-demo.mjs",
     "portfolio:allocate": "node scripts/portfolio.mjs allocate",
     "portfolio:nav": "node scripts/portfolio.mjs nav",
     "portfolio:redeem": "node scripts/portfolio.mjs redeem",
+    "portfolio:settle-redeem": "node scripts/redeem-settlement.mjs",
+    "portfolio:execute-redeem": "node scripts/redeem-settlement.mjs --execute",
     "portfolio:test": "node scripts/portfolio-self-test.mjs",
     "xstock:setup": "node scripts/xstock-devnet.mjs setup",
     "xstock:allocate": "node scripts/xstock-devnet.mjs allocate",
     "xstock:balances": "node scripts/xstock-devnet.mjs balances",
+    "review:check": "forge fmt --check && forge test && npm run portfolio:test",
     "demo:e2e": "node scripts/demo-e2e.mjs",
+    "live:relayer": "node scripts/omnietf-live-relayer.mjs",
+    "demo:ui": "node scripts/demo-ui-server.mjs",
+    "build:demo-ui": "node scripts/build-demo-ui.mjs",
+    "verify:demo-ui": "node scripts/verify-demo-ui.mjs",
+    "build": "npm run build:demo-ui",
     "slides:dev": "slidev slides.md",
-    "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF"
+    "slides:export:pptx": "slidev export slides.md --format pptx --output OmniETF",
+    "slides:export:pdf": "slidev export slides.md --format pdf --output OmniETF.pdf",
+    "slides:export": "npm run slides:export:pptx && npm run slides:export:pdf"
   },
   "devDependencies": {
     "@slidev/cli": "^52.14.2",
@@ -24,8 +39,12 @@
     "playwright-chromium": "^1.59.1"
   },
   "dependencies": {
+    "@chainlink/ccip-sdk": "^1.7.1",
+    "@chainlink/contracts-ccip": "^1.6.4",
     "@solana-program/system": "^0.12.0",
     "@solana-program/token": "^0.13.0",
-    "@solana/kit": "^6.9.0"
+    "@solana/kit": "^6.9.0",
+    "@solana/web3.js": "^1.98.4",
+    "ethers": "^6.16.0"
   }
 }

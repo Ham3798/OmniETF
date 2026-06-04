@@ -27,10 +27,10 @@ OmniETF uses token standards as design anchors, not as a claim that one existing
 
 | Standard | PoC role |
 | --- | --- |
-| ERC-20 | `mETF` canonical share token on Base |
+| ERC-20 | OpenZeppelin `mETF` canonical share token on Base |
 | ERC-4626 | NAV/share math reference: assets convert to shares by current vault value |
-| ERC-7540 | Async request/finalize lifecycle for cross-chain deposit and redeem |
-| ERC-7575 | Future multi-entrypoint, single-share-supply model |
+| ERC-7540 | Async request/claim lifecycle, request IDs, operator approval, pending/claimable request views |
+| ERC-7575 | Vault/share interface surface for asset, share, deposit, mint, withdraw, and redeem |
 | ERC-7621 | Basket weights and rebalance vocabulary |
 | SPL Token | Solana reserve asset custody for mock xStocks |
 | CCTP | USDC settlement rail from Base to Solana |
@@ -39,11 +39,28 @@ The key timing rule is:
 
 ```text
 requestDeposit starts CCTP, but does not mint mETF.
-Requested -> Settled -> Executed -> Finalized
-finalizeDeposit mints mETF only after Solana execution value is known.
+Pending -> Settled -> Claimable -> Claimed
+deposit/mint claims mETF only after Solana execution value is known.
 ```
 
 This avoids minting against a pre-execution estimate that ignores CCTP fees, execution slippage, or failed settlement.
+
+The vault implements the ERC-7540 / ERC-7575 interface surface used by this PoC. It exposes request IDs, `setOperator` / `isOperator`, standard pending/claimable request views, and standard claim functions:
+
+```text
+requestDeposit(assets, controller, owner)
+pendingDepositRequest(requestId, controller)
+claimableDepositRequest(requestId, controller)
+deposit(assets, receiver, controller)
+mint(shares, receiver, controller)
+requestRedeem(shares, controller, owner)
+pendingRedeemRequest(requestId, controller)
+claimableRedeemRequest(requestId, controller)
+withdraw(assets, receiver, controller)
+redeem(shares, receiver, controller)
+```
+
+Because CCTP also needs a Solana USDC token account and max fee, the controller first calls `setDepositRoute(mintRecipient, maxFee)`.
 
 ## Test
 
@@ -74,12 +91,17 @@ forge script script/StartCctpDeposit.s.sol \
   --broadcast
 ```
 
-## Async vault request and finalize
+## Async vault request and claim
 
 Deploy the async vault:
 
 ```bash
 forge script script/DeployOmniETFAsyncVault.s.sol:DeployOmniETFAsyncVault \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
+
+# Standards-aligned target: official OpenZeppelin Community ERC7540 base + AccessManager.
+forge script script/DeployOmniETFOZAsyncVault.s.sol:DeployOmniETFOZAsyncVault \
   --rpc-url "$BASE_SEPOLIA_RPC_URL" \
   --broadcast
 ```
@@ -92,21 +114,57 @@ forge script script/RequestOmniETFDeposit.s.sol:RequestOmniETFDeposit \
   --broadcast
 ```
 
-After Solana receives USDC and the mock xStock basket is allocated, finalize with the executed portfolio value in USDC base units:
+After Solana receives USDC and the mock xStock basket is allocated, the reporter marks the request settled/executed. The user then claims with standard `deposit`.
 
 ```bash
 forge script script/FinalizeOmniETFDeposit.s.sol:FinalizeOmniETFDeposit \
   --rpc-url "$BASE_SEPOLIA_RPC_URL" \
   --broadcast
+
+export CLAIM_ASSETS=999870
+forge script script/ClaimOmniETFDeposit.s.sol:ClaimOmniETFDeposit \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
 ```
 
-`finalizeDeposit(depositId, executedValue)` can perform the PoC state transition in one reporter call by emitting settlement/execution events before final mint. If you want to show the lifecycle step-by-step, call `markDepositSettled(depositId)`, then `markDepositExecuted(depositId, executedValue)`, then `finalizeDeposit(depositId, 0)`.
+`finalizeDeposit(depositId, executedValue)` remains as a reporter shortcut for demos, but the standard ERC-7540 path is `markDepositSettled`, `markDepositExecuted`, then user/operator `deposit` or `mint`.
 
 For the first deposit, `999870` executed base units mint `0.99987 mETF`. For later deposits, shares are minted with:
 
 ```text
 shares = executedValue * totalSupplyBefore / totalManagedAssetsBefore
 ```
+
+## Async vault redeem lifecycle
+
+The Base vault also exposes the reviewable redeem side of the async lifecycle:
+
+```text
+requestRedeem(shares, controller, owner) -> fundRedeemPayout(redeemId, assets) -> redeem(shares, receiver, controller)
+requestRedeem(shares, controller, owner) -> reverse CCTP mint to vault -> markRedeemClaimable(redeemId, assets) -> redeem(shares, receiver, controller)
+```
+
+Run:
+
+```bash
+forge script script/RequestOmniETFRedeem.s.sol:RequestOmniETFRedeem \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
+
+forge script script/FundOmniETFRedeemPayout.s.sol:FundOmniETFRedeemPayout \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
+
+forge script script/MarkOmniETFRedeemClaimable.s.sol:MarkOmniETFRedeemClaimable \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
+
+forge script script/ClaimOmniETFRedeem.s.sol:ClaimOmniETFRedeem \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --broadcast
+```
+
+`requestRedeem` moves mETF into vault escrow and records the request. `fundRedeemPayout` is reporter-only; it pulls USDC into the vault and marks the request claimable after the reverse settlement leg is available. If reverse CCTP mints directly to the vault, `markRedeemClaimable` uses the vault's unreserved USDC balance instead. `reservedRedeemAssets` prevents the same vault balance from backing two redeem requests. `redeem` / `withdraw` burns escrowed shares and transfers reserved USDC from the vault to the receiver. In production the funding USDC would come from Solana -> Base CCTP after selling reserve assets; in tests the reporter-funded and direct-vault-funded paths prove the Base-side payout behavior.
 
 ## What to verify
 
@@ -115,6 +173,8 @@ shares = executedValue * totalSupplyBefore / totalManagedAssetsBefore
 3. Circle `MessageTransmitterV2` emits `MessageSent`.
 4. Use the emitted `message` to request Circle attestation.
 5. Submit `receiveMessage(message, attestation)` on the destination chain/program.
+6. Vault emits ERC-7540 `DepositRequest`, then `DepositSettled`, `DepositExecuted`, and ERC-7575 `Deposit`.
+7. Vault emits ERC-7540 `RedeemRequest`, then `RedeemClaimable`, and ERC-7575 `Withdraw`.
 
 ## Current Base Sepolia values
 
@@ -210,7 +270,18 @@ The generated ledger is written to:
 
 This file is intentionally ignored by git because it is local demo state.
 
-Redeem is a quote only in this phase. A production redeem flow must sell Solana assets back to USDC, then perform CCTP Solana -> Base so the Base-side user can receive USDC.
+The CLI portfolio redeem can run in two modes. Quote mode shows the asset sales and reporter funding amount without mutating the ledger. Execute mode mutates the mock ledger as if the Solana basket was sold, records the reverse CCTP burn parameters, and points the operator to the Base claimable transition after USDC reaches the vault. The Base vault separately executes the redeem lifecycle through `Pending -> Claimable -> Claimed` and transfers Base-side USDC when the vault is funded. A production redeem flow must replace the mock sale with a real issuer-backed asset sale; the Solana -> Base CCTP burn and EVM receive scripts are present for live testnet runs.
+
+For the mock demo, generate the reporter funding amount from the portfolio ledger:
+
+```bash
+npm run portfolio:settle-redeem -- --shares 0.5
+npm run portfolio:execute-redeem -- --shares 0.5
+npm run cctp:burn-solana
+npm run cctp:receive-evm
+```
+
+`portfolio:settle-redeem` writes `.omnietf/redeem-settlement.json` with `REDEEM_ASSETS_CLAIMABLE` and the next `FundOmniETFRedeemPayout` command. `portfolio:execute-redeem` additionally updates `.omnietf/portfolio-ledger.json`, records `reverseCctpBurnIntent`, and emits a command chain for the direct-vault-funding path: `cctp:burn-solana`, `cctp:receive-evm`, then `MarkOmniETFRedeemClaimable`.
 
 `xstock:allocate` creates devnet mock SPL mints for `AAPLx`, `TSLAx`, and `NVDAx`, then mints the target quantities to a treasury token account. These are not issuer-backed xStock assets; they are devnet mock tokens used to make the execution leg visible on-chain.
 

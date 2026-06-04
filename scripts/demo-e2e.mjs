@@ -18,6 +18,13 @@ run("Devnet mock xStock SPL mint settlement", ["node", "scripts/xstock-devnet.mj
 run("Devnet mock xStock balances", ["node", "scripts/xstock-devnet.mjs", "balances"]);
 run("NAV", ["node", "scripts/portfolio.mjs", "nav"]);
 run("Redeem quote", ["node", "scripts/portfolio.mjs", "redeem", "--shares", redeemShares]);
+run("Mock asset sale and reverse CCTP settlement intent", [
+  "node",
+  "scripts/redeem-settlement.mjs",
+  "--shares",
+  redeemShares,
+  "--execute",
+]);
 
 console.log("\nDemo complete.");
 

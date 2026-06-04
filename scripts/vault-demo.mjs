@@ -11,15 +11,15 @@ const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
 const executedValue = ledger.portfolio.totalValueBaseUnits;
 
 console.log(JSON.stringify({
-  standardModel: "ERC-7540-style async deposit + ERC-4626 share math",
-  shareToken: "mETF ERC-20 on Base",
-  lifecycle: "Requested -> Settled -> Executed -> Finalized",
-  depositTiming: "requestDeposit starts CCTP; finalizeDeposit mints shares after Solana execution value is known",
+  standardModel: "ERC-7540 async requests + ERC-7575 vault/share surface + ERC-4626 share math",
+  shareToken: "OpenZeppelin ERC-20 mETF on Base",
+  lifecycle: "Pending -> Settled -> Claimable -> Claimed",
+  depositTiming: "requestDeposit starts CCTP; deposit/mint claims shares after Solana execution value is known",
   executedValueUsdc: ledger.portfolio.totalValueUsd,
   executedValueBaseUnits: executedValue,
   firstDepositExpectedShares: ledger.shareAccounting.totalShares,
   command: [
-    "forge script script/FinalizeOmniETFDeposit.s.sol:FinalizeOmniETFDeposit",
+    "forge script script/ClaimOmniETFDeposit.s.sol:ClaimOmniETFDeposit",
     "--rpc-url \"$BASE_SEPOLIA_RPC_URL\"",
     "--broadcast",
   ].join(" "),

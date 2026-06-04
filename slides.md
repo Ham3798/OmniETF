@@ -1,6 +1,6 @@
 ---
 theme: default
-title: OmniETF - CCTP 기반 멀티체인 인덱스 ETF
+title: OmniETF - Cross-chain Basket Share Accounting Protocol
 layout: cover
 transition: fade
 exportFilename: OmniETF
@@ -19,15 +19,15 @@ fonts:
 }
 
 .slidev-layout h1 {
-  line-height: 1.15;
-  letter-spacing: 0;
   color: #10201f;
+  letter-spacing: 0;
+  line-height: 1.1;
 }
 
 .slidev-layout h2,
 .slidev-layout h3 {
-  letter-spacing: 0;
   color: #17413d;
+  letter-spacing: 0;
 }
 
 .slidev-layout p,
@@ -41,517 +41,719 @@ fonts:
 
 .kicker {
   color: #0f766e;
-  font-weight: 700;
+  font-weight: 800;
   margin-bottom: 1rem;
 }
 
 .big-claim {
-  font-size: 2.15rem;
-  line-height: 1.25;
-  font-weight: 800;
+  font-size: 2rem;
+  font-weight: 850;
+  line-height: 1.28;
 }
 
 .muted {
   color: #64748b;
 }
 
+.source {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
 .pill {
-  display: inline-block;
+  background: #eefaf8;
   border: 1px solid #99d5cd;
   border-radius: 8px;
-  padding: 0.25rem 0.65rem;
-  margin: 0.15rem;
   color: #0f766e;
-  background: #eefaf8;
-  font-weight: 700;
-}
-
-.metric {
-  font-size: 3.3rem;
-  font-weight: 900;
-  color: #0f766e;
-  line-height: 1;
-}
-
-.small {
-  font-size: 0.86rem;
+  display: inline-block;
+  font-weight: 750;
+  margin: 0.12rem;
+  padding: 0.24rem 0.64rem;
 }
 </style>
 
-<div class="kicker">Proof of Concept</div>
+<div class="kicker">Blockchain Practice Final Presentation</div>
 
 # OmniETF
 
-## CCTP 기반 멀티체인 인덱스 ETF
+## Cross-chain Basket Share Accounting Protocol
 
-여러 체인에 흩어진 reserve를  
-하나의 mintable / redeemable share로 묶을 수 있는가?
-
-<!--
-발표자 노트:
-이 발표의 핵심은 "브릿지를 써봤다"가 아닙니다.
-핵심 질문은 "여러 체인에 분산된 자산 상태가 하나의 금융 객체처럼 동작할 수 있는가"입니다.
-저희는 멀티체인 reserve를 하나의 OmniETF share로 발행, 보유, 환급하는 구조를 PoC로 검증하려고 합니다.
--->
-
----
-layout: section
----
-
-# 1. 문제의식
-
-자산은 멀티체인화되었지만  
-사용자 경험은 여전히 하나의 포트폴리오를 원합니다.
+멀티체인 reserve를  
+하나의 share / NAV / redeem claim으로 묶는 PoC
 
 <!--
-발표자 노트:
-프로젝트는 토큰화 인덱스 펀드의 온체인화라는 문제의식에서 출발했습니다.
-여러 체인에 흩어진 자산을 사용자가 직접 관리하고 인덱싱하는 것은 번거롭고 비용도 큽니다.
-저희가 던진 질문은 "사용자가 메인 체인에서 버튼 하나만 눌러서 여러 체인의 자산 가치를 하나의 토큰으로 묶을 수 있는가"입니다.
+표준이 아니라 프로토콜 아이디어로 시작합니다.
+법적 ETF가 아니라 ETF-like basket share accounting protocol입니다.
 -->
 
 ---
 layout: default
 ---
 
-# 문제: 여러 체인, 여러 상태, 하나의 사용자
+# 목차
 
-- 사용자는 체인별 잔액과 비중을 직접 추적해야 함
-- 체인 간 이동과 재구성에는 비용, 시간, 실패 가능성이 존재
-- 사용자가 원하는 것은 복잡한 브릿징이 아니라 **하나의 투자 단위**
+1. Abstract
+2. Background
+3. Motivation
+4. Problem
+5. Protocol Structure
+6. Implementation
+7. Demo
+8. Limitations
+
+<!--
+참고 자료처럼 단순하고 명확한 목차로 시작합니다.
+-->
+
+---
+layout: section
+---
+
+# 1. Abstract
+
+OmniETF는 cross-chain 자산 운용에서  
+사용자가 하나의 share만으로 basket exposure를 보유하고  
+환매할 수 있는 구조를 실험합니다.
+
+---
+layout: default
+---
+
+# Abstract
+
+현재 멀티체인 환경에서는 자산, 유동성, 실행 상태가 체인별로 분리되어 있습니다.
+
+하지만 사용자는 여러 체인의 잔고를 직접 추적하기보다  
+하나의 포트폴리오, 하나의 NAV, 하나의 환매 권리를 원합니다.
+
+OmniETF는 이 문제를 해결하기 위해:
+
+- Base에 canonical share와 request accounting을 둠
+- Solana에 reserve execution과 SPL custody를 둠
+- CCTP로 USDC settlement를 수행
+- CCIP로 control message와 test-token round trip을 검증
+
+<!--
+여기서 ERC 표준 이야기를 하지 않습니다.
+사용자 문제와 시스템 구조만 말합니다.
+-->
+
+---
+layout: section
+---
+
+# 2. Background
+
+자산은 멀티체인화됐지만  
+portfolio accounting은 아직 사용자에게 떠넘겨져 있습니다.
+
+---
+layout: default
+---
+
+# 멀티체인 환경의 변화
+
+- 자산은 여러 체인에 배포됨
+- 유동성은 체인별로 분절됨
+- settlement와 execution의 시간이 다름
+- 사용자는 bridge, wallet, explorer, portfolio tracker를 오가야 함
+
+<div class="mt-8 big-claim">
+문제는 "어떻게 옮길까"보다<br/>"무엇을 하나로 보여줄까"입니다.
+</div>
+
+<!--
+외부 리서치의 chain abstraction / unified balance framing을 발표용으로 단순화합니다.
+-->
+
+---
+layout: default
+---
+
+# 문제정의
+
+멀티체인 포트폴리오에서 사용자가 원하는 것은  
+여러 chain state의 나열이 아니라 **단일한 청구권**입니다.
+
+| 분리된 상태 | 사용자가 원하는 상태 |
+|---|---|
+| Base wallet balance | 내가 가진 share |
+| Solana token account | reserve가 실제 존재하는지 |
+| CCTP attestation | settlement가 끝났는지 |
+| CCIP message | execution/control intent가 전달됐는지 |
+| 가격과 수량 | 현재 NAV와 redeem 가능 금액 |
+
+<div class="mt-7 big-claim">
+OmniETF는 bridge product가 아니라<br/>cross-chain claim accounting problem입니다.
+</div>
+
+---
+layout: default
+---
+
+# 기존 사용자의 경험
+
+| 사용자가 해야 하는 일 | 실제로 어려운 이유 |
+|---|---|
+| 어느 체인에 자산이 있는지 확인 | 체인별 잔고와 token account가 다름 |
+| bridge 상태 확인 | finality와 attestation 대기 |
+| 실행 결과 확인 | swap, custody, ledger가 별도 |
+| 총 가치를 계산 | 가격과 비중을 직접 합산 |
+| 환매 가능 여부 판단 | 어느 체인에서 얼마가 claimable인지 불명확 |
+
+---
+layout: default
+---
+
+# 우리가 원하는 경험
+
+사용자는 내부 cross-chain 과정을 몰라도 됩니다.
+
+사용자는 다음 세 가지만 보면 됩니다.
 
 <div class="mt-8">
-  <span class="pill">One claim surface</span>
-  <span class="pill">One share supply</span>
-  <span class="pill">One valuation surface</span>
+  <span class="pill">내 share 수량</span>
+  <span class="pill">현재 NAV</span>
+  <span class="pill">환매 가능한 USDC</span>
 </div>
 
-<!--
-발표자 노트:
-단일 체인 DeFi는 이미 "여러 underlying position을 하나의 토큰으로 들고 싶다"는 수요를 보여줬습니다.
-Index Coop, Set Protocol, Balancer pool token, Enzyme vault 같은 사례가 모두 같은 방향입니다.
-하지만 이들은 기본적으로 하나의 accounting domain 안에서 작동합니다.
-저희 문제는 accounting domain 자체가 여러 체인으로 흩어졌을 때도 하나의 share가 성립하는지입니다.
--->
-
----
-layout: fact
----
-
-# One Share
-
-복잡한 멀티체인 reserve를  
-하나의 OmniETF share로 추상화합니다.
-
-<!--
-발표자 노트:
-사용자는 여러 체인의 reserve를 직접 보지 않습니다.
-사용자는 OmniETF 같은 하나의 share를 보유하고, 프로토콜이 뒤에서 reserve 상태, 교환비, 발행량을 관리합니다.
-즉 사용자 관점의 목표는 "멀티체인 포트폴리오를 하나의 토큰처럼 보유하는 경험"입니다.
--->
+<div class="mt-10 big-claim">
+OmniETF의 목표는 bridge UI가 아니라<br/>claim surface를 만드는 것입니다.
+</div>
 
 ---
 layout: section
 ---
 
-# 2. 왜 블록체인인가
+# 3. Motivation
 
-이 문제는 단순 대시보드가 아니라  
-발행, 소각, 교환비, reserve accounting 문제입니다.
-
-<!--
-발표자 노트:
-여러 체인의 잔액을 보여주는 것만으로는 OmniETF share가 만들어지지 않습니다.
-share를 발행하고 소각하려면 어떤 reserve를 얼마만큼 반영했는지, 교환비가 무엇인지, 총 공급량과 NAV가 어떻게 결정되는지가 검증 가능해야 합니다.
-그래서 이 문제는 블록체인 기반 로직과 잘 맞습니다.
--->
-
----
-layout: two-cols
----
-
-# 블록체인이 필요한 이유
-
-- 구성 규칙을 공개적으로 강제
-- share 발행 / 소각 조건을 컨트랙트화
-- reserve 상태와 교환비 계산을 검증 가능하게 기록
-- 환급 요청 상태를 온체인에서 추적
-
-::right::
-
-## 우리가 필요한 것
-
-- 단순 asset transfer가 아님
-- cross-chain reserve 상태 동기화
-- global share value 계산
-- 사용자에게 하나의 redeemable claim 제공
-
-<!--
-발표자 노트:
-이 프로젝트는 "자산을 옮기는 브릿지"를 만드는 것이 아닙니다.
-여러 체인의 reserve 상태를 하나의 share value로 묶는 accounting layer를 검증하는 것입니다.
-그 과정은 공개된 규칙, 상태 추적, 발행 및 소각 조건이 필요하기 때문에 온체인 로직이 설득력 있습니다.
--->
+왜 이 문제에 블록체인이 필요한가?
 
 ---
 layout: default
 ---
 
-# 왜 CCTP와 Async Vault인가
+# 단순 대시보드로는 부족합니다
 
-- CCTP는 USDC settlement rail로 사용
-- CCIP는 향후 arbitrary messaging control plane 후보
-- 핵심은 token transfer보다 reserve state finalization
-- 비동기 cross-chain settlement를 전제로 한 구조
+Off-chain dashboard는 잔고를 보여줄 수는 있지만  
+사용자의 권리를 상태로 만들지는 못합니다.
+
+| Dashboard | Protocol |
+|---|---|
+| 보여줌 | 발행/환매 권리를 상태화 |
+| 운영자가 계산 | 컨트랙트가 조건 강제 |
+| 잔고 표시 | share supply와 claim 기록 |
+| 사용자 신뢰 필요 | tx와 state로 검증 가능 |
+
+---
+layout: default
+---
+
+# 블록체인을 쓰는 이유
+
+- share 발행 조건을 공개적으로 강제
+- redeem request와 claimable 상태를 추적
+- reserve-backed claim을 tx로 검증
+- reporter가 어떤 실행가치를 반영했는지 기록
+- 사용자가 explorer에서 상태를 확인 가능
+
+<div class="mt-8 source">
+이 프로젝트의 핵심은 금융 상품 출시가 아니라, cross-chain accounting state machine 검증입니다.
+</div>
+
+---
+layout: section
+---
+
+# 4. Problem
+
+기존 basket, vault, bridge는 각각 강하지만  
+이 문제를 한 번에 해결하지는 않습니다.
+
+---
+layout: default
+---
+
+# 기존 접근의 역할
+
+| 접근 | 잘하는 것 |
+|---|---|
+| Basket token | 여러 자산 exposure를 하나의 토큰으로 표현 |
+| Vault | share와 asset accounting |
+| Bridge / messaging | 체인 간 자산 또는 메시지 이동 |
+| CCTP | native USDC burn / mint settlement |
+| Portfolio tracker | 잔고와 가격 표시 |
+
+---
+layout: default
+---
+
+# 남는 빈칸
+
+| 질문 | 왜 어려운가 |
+|---|---|
+| Base에서 deposit한 순간 share를 바로 줄 수 있나? | Solana 실행가치가 아직 모름 |
+| bridge는 완료됐는데 basket은 구성됐나? | settlement와 execution이 별개 |
+| NAV는 누가 언제 확정하나? | 가격, 수량, fee, finality가 필요 |
+| redeem은 어떤 자산으로 backing되나? | reserve liquidation과 payout이 필요 |
+
+<div class="mt-8 big-claim">
+Cross-chain에서는 deposit이 곧 NAV 확정이 아닙니다.
+</div>
+
+---
+layout: default
+---
+
+# 실패 모드
+
+즉시 mint 방식은 cross-chain에서 다음 문제를 만듭니다.
+
+| 실패 모드 | 결과 |
+|---|---|
+| bridge는 됐지만 Solana 실행 실패 | share가 reserve 없이 발행됨 |
+| 실행 가격이 예상보다 나쁨 | 기존 holder가 손해를 봄 |
+| reporter가 늦게 반영 | NAV와 claimable state가 어긋남 |
+| redeem settlement가 지연 | burn/escrow 이후 payout timing이 불명확 |
+
+<div class="mt-8 big-claim">
+그래서 핵심은 빠른 mint가 아니라<br/>언제 mint해도 되는지 증명하는 것입니다.
+</div>
+
+---
+layout: default
+---
+
+# 핵심 설계 질문
+
+OmniETF가 다루는 질문은 단순합니다.
+
+<div class="mt-8 big-claim">
+운용 체인과 사용자 체인이 달라도<br/>하나의 share supply와 하나의 NAV를 유지할 수 있는가?
+</div>
+
+---
+layout: section
+---
+
+# 5. Protocol Structure
+
+Base는 share accounting,  
+Solana는 reserve execution,  
+CCTP/CCIP는 settlement-control rail입니다.
+
+---
+layout: default
+---
+
+# Protocol Diagram
 
 ```mermaid
 flowchart LR
-  A["Base Manager"] -->|"CCTP: USDC settlement"| B["Solana Reserve"]
-  B -->|"report: execution snapshot"| A
-  A --> C["Canonical share value"]
+  U["User"] -->|"request deposit / redeem"| B["Base\nOmniETF Vault"]
+  B -->|"mETF share"| M["Canonical\nShare Supply"]
+  B -->|"USDC settlement"| C["CCTP"]
+  C --> R["Solana\nReserve Treasury"]
+  R -->|"mock SPL basket"| X["AAPLx / TSLAx / NVDAx"]
+  R -->|"execution snapshot"| P["Reporter"]
+  P -->|"finalize NAV / claimable"| B
+  B -.->|"control proof"| K["CCIP"]
+  K -.-> R
 ```
 
 <!--
-발표자 노트:
-현재 구현은 CCTP를 실제 settlement rail로 사용합니다.
-CCIP는 arbitrary messaging이 필요한 다음 단계의 control plane 후보로 남깁니다.
-중요한 것은 어떤 브릿지 하나가 아니라 cross-chain execution 결과가 Base의 canonical share value에 안전하게 반영되는 구조입니다.
--->
-
----
-layout: section
----
-
-# 3. 기존 접근과 차별점
-
-이 프로젝트는 ERC-4626을 그대로 구현하는 것이 아니라  
-vault / basket primitive를 멀티체인으로 확장하는 실험입니다.
-
-<!--
-발표자 노트:
-회의에서 ERC-4626 이야기가 나왔지만, 이 프로젝트를 단순 4626 구현이라고 말하면 약합니다.
-4626은 단일 underlying ERC-20 기반 vault 표준입니다.
-우리는 그보다 cross-chain basket-share issuance에 가까운 문제를 다룹니다.
+Protocol Diagram은 참고 자료의 PawnDAO 구조도 역할입니다.
 -->
 
 ---
 layout: default
 ---
 
-# 표준과의 관계
+# Chain별 역할
 
-| 표준 | 우리에게 주는 의미 | 한계 |
-|---|---|---|
-| ERC-4626 | share, mint, redeem의 기본 직관 | 단일 underlying ERC-20 중심 |
-| ERC-7540 | 비동기 deposit / redeem 요청 흐름 | cross-chain basket 자체는 정의하지 않음 |
-| ERC-7575 | 여러 asset / entry point가 하나의 share 공유 | 체인 간 reserve accounting은 별도 문제 |
-| ERC-7621 | basket token, weight, rebalance 개념 | cross-chain execution layer는 구현 관심사 |
-| SPL Token | Solana reserve asset custody | issuer-backed xStock은 mainnet 범위 |
-| CCTP | Base USDC → Solana USDC settlement | arbitrary state messaging은 별도 필요 |
-
-<!--
-발표자 노트:
-딥리서치 결과상 이 표준들 중 cross-chain basket-share issuance를 직접 정의하는 완성된 표준은 찾기 어렵습니다.
-그래서 가장 정확한 표현은 "ERC-4626의 share semantics를 ERC-7540 async lifecycle과 ERC-7621 basket semantics로 확장한 cross-chain reserve accounting PoC"입니다.
--->
-
----
-layout: two-cols
----
-
-# 한 문장 차별점
-
-<div class="big-claim">
-기존 표준이 한 체인 안에서 share를 만드는 법을 다룬다면, 우리는 여러 체인에 분산된 reserve로도 하나의 share가 성립하는지 검증합니다.
-</div>
-
-::right::
-
-## 즉, 이것은
-
-- 단순 브릿지 데모가 아님
-- 단일 체인 vault도 아님
-- cross-chain reserve accounting 실험
-- one supply, one value, one claim 검증
-
-<!--
-발표자 노트:
-심사자나 청중이 "그냥 브릿지 아닌가요?"라고 생각할 수 있습니다.
-그래서 차별점은 일찍, 강하게 말해야 합니다.
-저희의 기여는 token transfer가 아니라 cross-chain 상태를 하나의 canonical share value로 수렴시키는 것입니다.
--->
-
----
-layout: section
----
-
-# 4. 제안 아키텍처
-
-Manager chain이 canonical share를 관리하고  
-satellite chain은 reserve 상태를 보고합니다.
-
-<!--
-발표자 노트:
-PoC 단계에서는 share token 자체를 여러 체인에 풀어놓기보다, manager chain에 canonical share를 두는 것이 가장 방어적인 설계입니다.
-복잡도를 줄이면서도 핵심 invariant를 검증할 수 있습니다.
--->
+| 구성요소 | 역할 |
+|---|---|
+| Base Vault | deposit/redeem request, share supply, claim 상태 관리 |
+| Solana Treasury | reserve custody, basket execution 결과 보관 |
+| CCTP | Base USDC와 Solana USDC 사이의 settlement |
+| CCIP | control message와 test-token round trip 검증 |
+| Reporter | Solana 실행 결과를 Base NAV로 확정 |
 
 ---
 layout: default
 ---
 
-# 시스템 구조
+# 설계 원칙
+
+| 원칙 | 적용 |
+|---|---|
+| mint는 실행 후에만 | `requestDeposit` 시점에는 mETF를 주지 않음 |
+| settlement와 execution 분리 | CCTP 수신과 Solana basket allocation을 별도 stage로 표시 |
+| NAV는 reporter가 확정 | executed value가 Base vault state에 반영되어야 claim 가능 |
+| redeem은 비동기 claim | share escrow 이후 backing USDC가 있을 때 지급 |
+| evidence first | 모든 stage는 tx hash, explorer, code path로 설명 |
+
+---
+layout: default
+---
+
+# Deposit Process
 
 ```mermaid
-flowchart LR
-  U["User"] -->|"deposit / redeem"| M["Manager Chain\nETF Manager"]
-  M -->|"mint / burn"| Y["OmniETF Share"]
-  M -->|"CCTP: USDC settlement"| R["Solana\nSPL Reserve"]
-  R -->|"mock xStock custody"| X["AAPLx / TSLAx / NVDAx"]
-  R -->|"reporter snapshot"| M
-  P["Price Feeds"] --> M
+sequenceDiagram
+  participant User
+  participant BaseVault
+  participant CCTP
+  participant SolanaTreasury
+  participant Reporter
+  User->>BaseVault: requestDeposit(USDC)
+  BaseVault->>CCTP: burn / send message
+  CCTP->>SolanaTreasury: mint USDC
+  SolanaTreasury->>SolanaTreasury: allocate basket
+  Reporter->>BaseVault: finalizeDeposit(executedValue)
+  User->>BaseVault: claim mETF
 ```
-
-- Manager Chain: total supply, target weight, valuation, mint / burn 결정
-- Solana Reserve: SPL token custody, basket execution 결과 보관
-- CCTP: Base USDC를 Solana reserve capital로 이동
-- Reporter: Solana execution snapshot을 Base finalization에 반영
-
-<!--
-발표자 노트:
-Manager contract는 총 공급량, 목표 비중, 가치 평가 snapshot, mint/burn 결정을 담당합니다.
-Solana 쪽은 local reserve ledger와 SPL token account를 가지고, reporter가 실행 결과 snapshot을 Base에 반영합니다.
-valuation은 reserve balances와 외부 price input을 이용해 하나의 accounting unit으로 정규화합니다.
--->
-
----
-layout: two-cols
----
-
-# Deposit Flow
-
-1. 사용자가 Base에서 deposit request
-2. CCTP로 USDC를 Solana reserve에 전송
-3. Solana에서 mock xStock SPL basket 실행
-4. reporter가 executed value를 Base에 보고
-5. NAV before deposit 기준 share 계산
-6. 그때 OmniETF share 발행
-
-::right::
-
-# Redeem Flow
-
-1. 사용자가 OmniETF 환급 요청
-2. share burn 또는 escrow
-3. Solana basket 매도 / USDC 확보
-4. CCTP로 Base에 USDC 정산
-5. reporter가 claimable value 확정
-6. 사용자 claim 완료
-
-<!--
-발표자 노트:
-입금은 즉시 mint하지 않습니다.
-cross-chain execution 전에는 CCTP fee, execution result, slippage를 알 수 없기 때문입니다.
-따라서 ERC-7540의 async request model처럼 request와 finalize를 분리합니다.
--->
-
----
-layout: fact
----
-
-# Core Invariant
-
-Reserve는 여러 체인에 있어도  
-**share supply는 하나**이고  
-**share value도 하나**여야 합니다.
-
-<!--
-발표자 노트:
-이 프로젝트의 본질은 이 invariant를 검증하는 것입니다.
-메시지를 보낼 수 있는지보다 중요한 질문은 "분산된 reserve가 하나의 금융 객체처럼 회계 처리될 수 있는가"입니다.
-이 invariant가 성립해야 사용자는 하나의 redeemable claim을 가진다고 말할 수 있습니다.
--->
-
----
-layout: section
----
-
-# 5. PoC 범위
-
-완전한 상용 ETF 운용 시스템이 아니라  
-멀티체인 reserve accounting의 가능성을 검증합니다.
-
-<!--
-발표자 노트:
-규제형 ETF를 만드는 것이 아닙니다.
-또한 처음부터 완전한 rebalancing engine을 만드는 것도 아닙니다.
-핵심은 cross-chain reserve가 하나의 share value로 수렴하는지 보여주는 것입니다.
--->
-
----
-layout: two-cols
----
-
-# 이번 데모에서 보여줄 것
-
-- Base → Solana CCTP USDC settlement
-- Solana devnet mock xStock SPL custody
-- AAPLx / TSLAx / NVDAx = 40 : 30 : 30
-- Base async vault에서 mETF finalize mint
-- redeem request quote lifecycle 검증
-
-::right::
-
-## Redeem 상태 흐름
-
-<div class="small">
-  <div class="pill">Pending</div>
-  <div class="my-2 muted">settlement snapshot received</div>
-  <div class="pill">Acknowledged</div>
-  <div class="my-2 muted">valuation finalized</div>
-  <div class="pill">Claimable</div>
-  <div class="my-2 muted">user claim</div>
-  <div class="pill">Completed</div>
-</div>
-
-<!--
-발표자 노트:
-회의록의 예시처럼 "ETH 5, BTC 1이 교환비에 따라 1 OmniETF가 된다"는 아이디어를 더 시스템적으로 표현하면 fixed weight basket과 canonical share value입니다.
-현재 데모는 USDC settlement와 Solana SPL reserve custody까지 온체인으로 보여주고, issuer-backed xStock swap은 다음 단계로 남깁니다.
--->
 
 ---
 layout: default
 ---
 
-# 구현 계획
+# Redeem Process
 
-| 단계 | 목표 | 산출물 |
-|---|---|---|
-| 1 | CCTP settlement | Base Sepolia → Solana devnet USDC |
-| 2 | Solana SPL reserve | mock AAPLx / TSLAx / NVDAx treasury |
-| 3 | Async vault | requestDeposit / finalizeDeposit / mETF |
-| 4 | NAV accounting | executed value 기준 share mint |
-| 5 | 발표 데모 | deposit, execute, finalize, redeem quote |
+```mermaid
+sequenceDiagram
+  participant User
+  participant BaseVault
+  participant SolanaTreasury
+  participant CCTP
+  User->>BaseVault: requestRedeem(shares)
+  BaseVault->>BaseVault: escrow shares
+  SolanaTreasury->>SolanaTreasury: sell / settle reserve
+  SolanaTreasury->>CCTP: burn USDC
+  CCTP->>BaseVault: mint USDC
+  User->>BaseVault: claimRedeem()
+```
+
+---
+layout: default
+---
+
+# NAV 확정 방식
+
+NAV는 단순 화면 숫자가 아니라  
+share mint/redeem의 기준입니다.
+
+| 시점 | 처리 |
+|---|---|
+| 첫 deposit | NAV = 1 |
+| 이후 deposit | minted shares = executedValue / navBefore |
+| redeem request | shares escrow |
+| redeem claim | backing USDC 확인 후 payout |
+
+---
+layout: default
+---
+
+# Token Standards는 도구입니다
+
+이 발표의 주인공은 ERC 표준이 아니라  
+cross-chain basket-share accounting lifecycle입니다.
+
+| 도구 | 쓰는 이유 |
+|---|---|
+| ERC-20 | mETF share를 표현하기 위해 |
+| ERC-4626 | asset/share 계산 언어를 빌리기 위해 |
+| ERC-7540 | request/claim 비동기 흐름을 표현하기 위해 |
+| ERC-7621 | basket weight vocabulary를 빌리기 위해 |
+| SPL Token | Solana reserve custody를 보이기 위해 |
 
 <!--
-발표자 노트:
-현재 PoC는 CCTP와 Solana SPL custody, 그리고 Base async vault를 연결하는 방향입니다.
-표준 파트는 ERC-4626 수식을 그대로 가져오되, 실행 타이밍 문제 때문에 ERC-7540식 request/finalize lifecycle을 채택합니다.
+사용자 요청 반영: "4626은 출발점..." 같은 표현을 빼고, 표준은 도구일 뿐이라고 명확히 말합니다.
 -->
 
 ---
 layout: section
 ---
 
-# 6. 리스크와 방어 논리
+# 6. Implementation
 
-어려운 지점은 메시지 전송보다  
-share value를 어떻게 방어 가능하게 정의하느냐입니다.
-
-<!--
-발표자 노트:
-심사자들이 물을 가능성이 높은 지점은 "메시지가 가나요?"보다 "이 share value가 정말 믿을 수 있나요?"입니다.
-그래서 valuation, oracle, 초기 가격 조작, message failure, token selection 문제를 미리 인정하고 범위를 제한해야 합니다.
--->
+이번 구현은 production ETF가 아니라  
+end-to-end accounting path를 검증하는 PoC입니다.
 
 ---
-layout: two-cols
+layout: default
 ---
 
-# 주요 리스크
+# 구현 범위
 
-- initial pricing / donation attack
-- oracle manipulation
-- message delay / failed execution
-- rebalance front-running
-- fee-on-transfer / rebasing token 문제
+| 영역 | 구현 |
+|---|---|
+| Base | async vault, mETF share, request/redeem lifecycle |
+| CCTP | Base ↔ Solana USDC settlement scripts |
+| Solana | mock xStock SPL basket ledger / custody |
+| Reporter | executed value finalization |
+| CCIP | Base ↔ Solana control message, CCIP-BnM round trip |
+| UI | pipeline stage별 tx evidence와 ledger 상태 표시 |
 
-::right::
+---
+layout: default
+---
 
-# PoC 방어 전략
+# 구현하지 않은 것
 
-- allowlist 기반 단순 ERC-20만 사용
-- virtual shares 또는 seeded liquidity 고려
-- internal reserve accounting 사용
-- static weight 또는 제한된 rebalance
-- settlement tx, reporter, token account 검증
+- 법적 ETF 구조
+- issuer-backed real xStock 매수/매도
+- production oracle / reporter network
+- automated liquidation
+- automated rebalance
+- CCIP 기반 USDC settlement claim
 
-<!--
-발표자 노트:
-ERC-7621과 ERC-4626 관련 문서 모두 초기 가격 조작, donated asset, preview function misuse 같은 문제를 경고합니다.
-그래서 PoC에서는 단순 자산 allowlist, 내부 회계, 외부 price input, 제한된 rebalance로 범위를 좁히는 것이 설득력 있습니다.
-CCTP settlement tx, Solana token account, reporter authority 검증을 기본 전제로 둡니다.
--->
+<div class="mt-8 big-claim">
+과장하지 않는 것이 이 PoC의 방어력입니다.
+</div>
+
+---
+layout: section
+---
+
+# 7. Demo
+
+시연은 라이브 전송이 아니라  
+검증된 evidence를 보여주는 방식입니다.
+
+---
+layout: default
+---
+
+# Demo Interface
+
+```text
+npm run demo:ui
+http://localhost:4173
+npm run build
+npm run verify:demo-ui
+vercel deploy
+```
+
+- Base → CCTP → Solana → Reporter → Base claim pipeline 표시
+- stage별 explorer evidence 제공
+- NAV, basket allocation, redeem quote, vault state 표시
+- wallet connect와 scan 링크 제공
+- contract code snippet을 stage 논리에 맞춰 표시
+- Vercel 배포용 정적 `demo-dist` 생성
+- `.vercelignore`로 secret / build artifact 업로드 경계 설정
+
+---
+layout: default
+---
+
+# Demo Page Structure
+
+| 영역 | 발표에서 보여줄 것 |
+|---|---|
+| Hero metrics | NAV, total shares, managed assets |
+| Wallet module | Base Sepolia user context와 scan 진입점 |
+| Pipeline | buy / redeem / CCIP control path |
+| Stage detail | 어떤 chain, 어떤 rail, 어떤 tx인지 |
+| CCIP rail | control message, BnM buy leg, BnM return leg 구분 |
+| Explorer evidence | Basescan, Solana explorer, CCIP explorer |
+| Session tx stack | 사용자가 누른 tx와 log topic을 브라우저 세션에 누적 |
+| Code reader | requestDeposit, finalizeDeposit, claimRedeem, sendAllocate |
+| Claim boundary | 무엇을 증명했고 무엇은 아직 아닌지 |
+
+---
+layout: default
+---
+
+# Live Console Reading
+
+데모 UI는 투자 앱 화면이 아니라  
+cross-chain lifecycle의 상태판입니다.
+
+| 화면 값 | 의미 |
+|---|---|
+| `Base / Vault` | mETF share supply, deposit request, redeem request의 canonical state |
+| `CCTP / USDC account` | Base에서 burn된 USDC가 Solana reserve capital로 도착했는지 |
+| `CCIP / Program` | Solana custody program이 control message를 처리했는지 |
+| `Claimable` | reporter finalization 이후 사용자가 mint할 수 있는 executed value |
+| `Session tx` | 이번 브라우저 세션에서 발생한 tx receipt와 event topic stack |
+
+<div class="mt-6 big-claim">
+Buy는 request이고,<br/>Claim이 share mint입니다.
+</div>
+
+---
+layout: default
+---
+
+# Linked Address Map
+
+| 링크 | 역할 | 발표에서의 해석 |
+|---|---|---|
+| Vault `0x77cA...f25e` | Base async vault | canonical mETF와 request accounting |
+| Circle CCTP `CCTPV2...UMQe` | Solana CCTP receiver | USDC settlement endpoint |
+| USDC account `9y7n...ABut` | Solana token account | reserve capital balance |
+| Solana Program `4Laat...R881` | CCIP receiver / custody program | control message가 basket state를 바꾸는 곳 |
+| State `BTZC...yDcg` | Solana program state | message count, basket counters, last CCIP id |
+
+<div class="mt-5 source">
+USDC가 Solana Program으로 바로 들어가는 것이 아니라, CCTP USDC account로 settle되고 reporter가 Base vault를 finalize합니다.
+</div>
+
+---
+layout: default
+---
+
+# CCIP Messaging View
+
+데모 페이지는 CCIP를 USDC settlement로 과장하지 않고  
+세 가지 evidence로 분리해서 보여줍니다.
+
+| CCIP 증거 | 의미 |
+|---|---|
+| Control message | Base에서 Solana program으로 allocation intent 전달 |
+| Base → Solana BnM | test-token buy leg 전송 |
+| Solana → Base BnM | test-token redeem leg round trip |
+
+<div class="mt-6 source">
+Presentation rule: USDC settlement = CCTP, CCIP = control / test-token rail.
+</div>
+
+---
+layout: default
+---
+
+# CCTP / Vault E2E Evidence
+
+| 단계 | 검증 결과 |
+|---|---|
+| Base deposit request | `OmniETFOZAsyncVault`에서 request 생성 |
+| CCTP settlement | Base Sepolia USDC → Solana devnet USDC |
+| Solana reserve | mock AAPLx / TSLAx / NVDAx SPL custody |
+| Reporter finalize | executed value 기준 claimable deposit |
+| mETF claim | `totalSupply = 999870`, `NAV = 1` |
+| Redeem | share escrow → reverse CCTP / funded payout → Base USDC claim |
+
+---
+layout: default
+---
+
+# CCIP Evidence
+
+| 구간 | 증거 | 상태 |
+|---|---|---|
+| Base → Solana control message | allocation message delivered to Solana program | SUCCESS |
+| Base → Solana token leg | `0.001 CCIP-BnM` | SUCCESS |
+| Solana → Base token leg | `0.001 CCIP-BnM` returned | SUCCESS |
+| 최종 잔고 | Base `0.999 → 1.0`, Solana `0.001 → 0` | round trip |
+
+<div class="mt-5 source">
+USDC settlement는 CCTP입니다. CCIP는 control message와 CCIP-BnM test-token evidence입니다.
+</div>
+
+---
+layout: default
+---
+
+# 시연 순서
+
+1. 홈페이지에서 전체 pipeline 확인
+2. Deposit request stage 클릭
+3. CCTP settlement tx 확인
+4. Solana reserve basket 확인
+5. Reporter finalization과 NAV 확인
+6. Redeem quote와 Base vault state 확인
+7. CCIP proof는 별도 control rail로 설명
+
+---
+layout: section
+---
+
+# 8. Limitations
+
+이 PoC는 가능한 것과 아직 아닌 것을  
+명확히 구분합니다.
+
+---
+layout: default
+---
+
+# Trust Boundary
+
+| 항목 | 신뢰 가정 |
+|---|---|
+| CCTP | Circle attestation과 domain 운영 |
+| CCIP | DON/OCR, rate limits, governance |
+| Reporter | 현재는 centralized finalizer |
+| xStock | 현재는 issuer-backed asset이 아니라 mock SPL |
+| NAV | execution snapshot과 price input 정확성 |
+
+---
+layout: default
+---
+
+# 왜 xStock Narrative인가
+
+- tokenized equities는 basket / NAV 설명이 직관적
+- Solana DeFi execution narrative와 잘 맞음
+- SPL Token custody로 reserve-side balance를 온체인 표시 가능
+
+하지만 현재 PoC는 issuer-backed real xStock이 아니라  
+devnet mock SPL basket입니다.
+
+---
+layout: default
+---
+
+# Next Steps
+
+| 다음 단계 | 필요한 작업 |
+|---|---|
+| real xStock integration | issuer, compliance, oracle, liquidity 확인 |
+| Jupiter execution | route quote, slippage, failure handling |
+| permissionless NAV | threshold reporter / oracle network |
+| automated rebalance | weight drift, execution timing, front-running 방어 |
+| production redeem | liquidation, reserve proof, payout queue |
 
 ---
 layout: fact
 ---
 
-# Not “Bridge Tokens Harder”
+# 단순 Settlement가 아닙니다
 
 핵심은 토큰을 더 잘 옮기는 것이 아니라  
 멀티체인 reserve가 하나의 금융 객체처럼 동작함을 보이는 것입니다.
 
-<!--
-발표자 노트:
-이 문장이 결론의 핵심입니다.
-저희 프로젝트는 브릿지 성능 비교가 아니라, cross-chain reserve accounting과 share issuance가 결합될 수 있는지를 검증하는 실험입니다.
--->
-
----
-layout: section
----
-
-# 7. 기대 결과
-
-여러 체인의 reserve가  
-하나의 온체인 OmniETF share로 표현될 수 있음을 증명합니다.
-
-<!--
-발표자 노트:
-발표의 마지막 파트에서는 결과물을 명확하게 말합니다.
-사용자는 Base에서 예치하고, CCTP settlement와 Solana execution snapshot이 반영된 뒤 하나의 OmniETF share를 받으며, 환급 요청도 비동기 상태 머신으로 처리됩니다.
--->
-
 ---
 layout: default
 ---
 
-# 최종 메시지
+# 결론
 
-- 문제: 멀티체인 자산은 흩어져 있지만 사용자는 하나의 투자 단위를 원함
-- 접근: CCTP로 USDC를 이동하고 reporter가 Solana reserve snapshot을 Base canonical share value에 반영
-- 차별점: 단일 체인 vault가 아니라 cross-chain basket-share accounting
-- PoC 목표: one supply, one value, one redeemable claim 검증
+- 사용자는 여러 체인의 잔고가 아니라 하나의 claim surface를 원함
+- OmniETF는 Base share accounting과 Solana reserve execution을 분리
+- CCTP는 USDC settlement, CCIP는 control/test-token evidence
+- 즉시 mint 대신 async request / finalize / claim lifecycle 사용
+- 결과적으로 one share, one NAV, one redeem path를 PoC로 검증
 
 <div class="mt-8 big-claim">
 Cross-chain reserves can behave like one financial object onchain.
 </div>
 
-<!--
-발표자 노트:
-마무리는 간단하게 가져가면 됩니다.
-저희는 CCTP settlement와 reporter finalization을 활용해 멀티체인 reserve 상태를 하나의 share value로 수렴시키고,
-그 결과를 바탕으로 발행과 환급이 가능한 OmniETF share 구조를 검증합니다.
-즉 "멀티체인 자산을 하나의 투자 객체로 추상화할 수 있는가"에 대한 PoC입니다.
--->
-
 ---
 layout: end
 ---
 
-# Thank You
-
-Q&A
+# Q&A
 
 <!--
-발표자 노트:
 예상 질문:
-1. 왜 ERC-4626이 아닌가?
-답: 4626은 단일 underlying ERC-20 vault라서 share semantics의 참고점일 뿐입니다. 저희 문제는 cross-chain basket accounting입니다.
-2. 왜 CCTP인가?
-답: 이번 PoC의 실제 자본 이동은 USDC settlement가 핵심이므로 Circle CCTP가 가장 직접적인 rail입니다. CCIP는 다음 단계의 arbitrary messaging control plane 후보입니다.
-3. 초기 PoC 범위는?
-답: state aggregation, share value 계산, mint/burn, async redeem lifecycle 검증입니다.
+1. ERC 표준이 핵심인가?
+답: 아닙니다. ERC 표준은 구현 도구이고 핵심은 cross-chain reserve accounting lifecycle입니다.
+2. mock xStock이면 의미가 있나?
+답: issuer-backed 주식 거래가 아니라 cross-chain reserve accounting lifecycle이 핵심입니다.
+3. CCIP가 더 안전한가?
+답: trustless라고 말하지 않습니다. shared-security/governance assumption이 있는 control rail입니다.
+4. 실제 돈은 움직였나?
+답: CCTP로 devnet USDC settlement, CCIP로 CCIP-BnM round trip을 검증했습니다.
 -->

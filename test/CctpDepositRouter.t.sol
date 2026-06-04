@@ -5,10 +5,6 @@ import { Test } from "forge-std/Test.sol";
 import { CctpDepositRouter } from "../contracts/CctpDepositRouter.sol";
 
 contract MockUsdc {
-    string public constant name = "Mock USDC";
-    string public constant symbol = "USDC";
-    uint8 public constant decimals = 6;
-
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 

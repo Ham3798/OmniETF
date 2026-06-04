@@ -112,6 +112,105 @@ export function quoteRedeem(ledger, shares) {
   };
 }
 
+export function executeRedeemSettlement(
+  ledger,
+  shares,
+  {
+    redeemId = null,
+    reverseDestinationDomain = null,
+    reverseMintRecipient = null,
+    reverseDestinationCaller = null,
+    solanaUsdcMint = null,
+    generatedAt = new Date().toISOString(),
+  } = {},
+) {
+  const quote = quoteRedeem(ledger, shares);
+  const shareUnits = BigInt(quote.shareUnits);
+  const redeemBaseUnits = BigInt(quote.redeemableBaseUnits);
+  const totalShares = BigInt(ledger.shareAccounting.totalShareUnits);
+  const totalValue = BigInt(ledger.portfolio.totalValueBaseUnits);
+
+  const saleBySymbol = new Map(quote.assetSales.map((sale) => [sale.symbol, sale]));
+  const nextAssets = ledger.portfolio.assets.map((asset) => {
+    const sale = saleBySymbol.get(asset.symbol);
+    if (!sale) throw new Error(`Missing redeem sale for ${asset.symbol}`);
+    const nextAllocated = BigInt(asset.allocatedBaseUnits) - BigInt(sale.sellBaseUnits);
+    const priceBaseUnits = parseUsdToBaseUnits(asset.priceUsd);
+    return {
+      ...asset,
+      allocatedUsd: formatBaseUnits(nextAllocated),
+      allocatedBaseUnits: nextAllocated.toString(),
+      mockQuantity: formatQuantity(nextAllocated, priceBaseUnits),
+    };
+  });
+
+  const nextTotalShares = totalShares - shareUnits;
+  const nextTotalValue = totalValue - redeemBaseUnits;
+  const nextLedger = {
+    ...ledger,
+    generatedAt,
+    shareAccounting: {
+      ...ledger.shareAccounting,
+      totalShareUnits: nextTotalShares.toString(),
+      totalShares: formatBaseUnits(nextTotalShares),
+    },
+    portfolio: {
+      ...ledger.portfolio,
+      totalValueBaseUnits: nextTotalValue.toString(),
+      totalValueUsd: formatBaseUnits(nextTotalValue),
+      navBaseUnits:
+        nextTotalShares === 0n
+          ? USDC_UNIT.toString()
+          : ((nextTotalValue * USDC_UNIT) / nextTotalShares).toString(),
+      navUsd: nextTotalShares === 0n ? "1" : formatBaseUnits((nextTotalValue * USDC_UNIT) / nextTotalShares),
+      assets: nextAssets,
+    },
+    lastRedeemSettlement: {
+      generatedAt,
+      redeemId,
+      shares,
+      shareUnits: quote.shareUnits,
+      assetsClaimable: quote.redeemableBaseUnits,
+      redeemableUsdc: quote.redeemableUsdc,
+      assetSales: quote.assetSales,
+    },
+  };
+
+  return {
+    quote,
+    nextLedger,
+    settlement: {
+      version: 1,
+      generatedAt,
+      mode: "mock-redeem-settlement-executed",
+      redeemId,
+      shares,
+      shareUnits: quote.shareUnits,
+      assetsClaimable: quote.redeemableBaseUnits,
+      redeemableUsdc: quote.redeemableUsdc,
+      assetSales: quote.assetSales,
+      remainingPortfolio: summarizeNav(nextLedger),
+      reverseCctpBurnIntent: {
+        sourceChain: "solana-devnet",
+        sourceUsdcTokenAccount: ledger.source.usdcTokenAccount ?? null,
+        burnToken: solanaUsdcMint,
+        destinationChain: "base-sepolia",
+        destinationDomain: reverseDestinationDomain,
+        mintRecipient: reverseMintRecipient,
+        destinationCaller: reverseDestinationCaller,
+        amount: quote.redeemableBaseUnits,
+        note: "After this Solana -> Base CCTP transfer mints USDC into the vault, call MarkOmniETFRedeemClaimable.",
+      },
+      nextEnv: {
+        OMNIETF_REDEEM_ID: redeemId ?? "0x...",
+        REDEEM_ASSETS_CLAIMABLE: quote.redeemableBaseUnits,
+      },
+      nextCommand:
+        "npm run cctp:burn-solana && npm run cctp:receive-evm && forge script script/MarkOmniETFRedeemClaimable.s.sol:MarkOmniETFRedeemClaimable --rpc-url \"$BASE_SEPOLIA_RPC_URL\" --broadcast",
+    },
+  };
+}
+
 export function parseUsdToBaseUnits(value) {
   const text = String(value).trim();
   if (!/^\d+(\.\d+)?$/.test(text)) throw new Error(`Invalid decimal amount: ${value}`);

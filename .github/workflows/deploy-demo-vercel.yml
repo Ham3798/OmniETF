@@ -1,0 +1,55 @@
+name: Deploy Demo UI to Vercel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - yunsik
+    paths:
+      - "demo-ui/**"
+      - "scripts/build-demo-ui.mjs"
+      - "scripts/verify-demo-ui.mjs"
+      - "scripts/portfolio-core.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "vercel.json"
+      - ".github/workflows/deploy-demo-vercel.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static demo
+        run: npm run build
+
+      - name: Verify static demo
+        run: npm run verify:demo-ui
+
+      - name: Verify no secrets in deploy output
+        run: |
+          ! grep -RInE 'PRIVATE_KEY|MNEMONIC|SECRET|INFURA|ALCHEMY|RPC_URL' demo-dist vercel.json
+
+      - name: Pull Vercel project settings
+        run: npx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel output
+        run: npx vercel@latest build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy prebuilt output
+        run: npx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
