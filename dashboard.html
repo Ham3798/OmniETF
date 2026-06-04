@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Chain ETF Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #0a0f1e; font-family: 'Inter', sans-serif; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; }
+    .glow-blue { box-shadow: 0 0 20px rgba(59,130,246,0.15); }
+    .glow-green { box-shadow: 0 0 20px rgba(34,197,94,0.15); }
+    .chain-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    .badge-base { background: #1e3a5f; color: #60a5fa; border: 1px solid #3b82f6; }
+    .badge-solana { background: #1e1a3a; color: #a78bfa; border: 1px solid #7c3aed; }
+    .badge-bridge { background: #1e2a1e; color: #4ade80; border: 1px solid #22c55e; }
+    .log-entry { border-left: 2px solid #374151; padding-left: 12px; margin-bottom: 8px; font-size: 13px; }
+    .log-entry.success { border-color: #22c55e; }
+    .log-entry.info { border-color: #3b82f6; }
+    .log-entry.bridge { border-color: #a78bfa; }
+    .flow-arrow { color: #4b5563; font-size: 20px; }
+    input[type=number] { background: #1f2937; border: 1px solid #374151; color: white; border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; }
+    input[type=number]:focus { border-color: #3b82f6; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .stat-card { background: linear-gradient(135deg, #111827, #1a2235); border: 1px solid #1f2937; border-radius: 10px; padding: 16px; }
+    .price-up { color: #4ade80; }
+    .price-down { color: #f87171; }
+    @keyframes pulse-border { 0%,100% { border-color: #3b82f6; } 50% { border-color: #60a5fa; } }
+    .processing { animation: pulse-border 1s infinite; }
+    .flow-step { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .flow-step .icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .flow-step.active .icon { animation: pulse-border 1s infinite; }
+  </style>
+</head>
+<body class="text-gray-100 min-h-screen p-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xl">📈</div>
+      <div>
+        <h1 class="text-xl font-bold text-white">Multi-Chain ETF</h1>
+        <p class="text-xs text-gray-400">운용: Solana &nbsp;|&nbsp; 지분: Base</p>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <span class="chain-pill badge-base">⬡ Base Chain</span>
+      <span class="chain-pill badge-bridge">⇄ Bridge</span>
+      <span class="chain-pill badge-solana">◎ Solana</span>
+    </div>
+  </div>
+
+  <!-- Setup Bar -->
+  <div id="setupBar" class="card p-4 mb-6 flex items-center justify-between glow-blue">
+    <div>
+      <p class="font-semibold text-blue-400">⚙️ 초기 설정</p>
+      <p class="text-xs text-gray-400 mt-1">Hardhat 노드(localhost:8545)에 컨트랙트를 배포합니다</p>
+    </div>
+    <button id="btnSetup" onclick="setup()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-semibold text-sm transition">
+      🚀 배포 시작
+    </button>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid grid-cols-12 gap-4">
+
+    <!-- Left: Portfolio chart -->
+    <div class="col-span-12 lg:col-span-4">
+      <div class="card p-5 glow-blue h-full">
+        <p class="text-sm font-semibold text-gray-400 mb-4">포트폴리오 구성</p>
+        <div class="relative" style="height:200px">
+          <canvas id="portfolioChart"></canvas>
+          <div id="chartCenter" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <p class="text-2xl font-bold text-white" id="totalNavDisplay">$0</p>
+            <p class="text-xs text-gray-400">Total NAV</p>
+          </div>
+        </div>
+        <div class="mt-4 space-y-2" id="assetList">
+          <div class="flex justify-between items-center py-1">
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-blue-500"></div><span class="text-sm">AAPLx</span></div>
+            <span class="text-sm text-gray-300">40% · <span id="aaplxVal">$0</span></span>
+          </div>
+          <div class="flex justify-between items-center py-1">
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-purple-500"></div><span class="text-sm">TSLAx</span></div>
+            <span class="text-sm text-gray-300">30% · <span id="tslaxVal">$0</span></span>
+          </div>
+          <div class="flex justify-between items-center py-1">
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-green-500"></div><span class="text-sm">NVDAx</span></div>
+            <span class="text-sm text-gray-300">30% · <span id="nvdaxVal">$0</span></span>
+          </div>
+        </div>
+        <!-- Prices -->
+        <div class="mt-4 border-t border-gray-800 pt-4">
+          <p class="text-xs text-gray-500 mb-2">Mock 가격 (USDC)</p>
+          <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div><div class="text-gray-400">AAPLx</div><div id="priceAapl" class="font-semibold">$150</div></div>
+            <div><div class="text-gray-400">TSLAx</div><div id="priceTsla" class="font-semibold">$200</div></div>
+            <div><div class="text-gray-400">NVDAx</div><div id="priceNvda" class="font-semibold">$800</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Stats + Actions -->
+    <div class="col-span-12 lg:col-span-5 flex flex-col gap-4">
+
+      <!-- Stats -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="stat-card">
+          <p class="text-xs text-gray-500">Reported NAV</p>
+          <p class="text-xl font-bold text-white mt-1" id="navDisplay">$0.00</p>
+        </div>
+        <div class="stat-card">
+          <p class="text-xs text-gray-500">NAV per mETF</p>
+          <p class="text-xl font-bold text-white mt-1" id="npsDisplay">$1.0000</p>
+        </div>
+        <div class="stat-card">
+          <p class="text-xs text-gray-500">내 mETF 잔고</p>
+          <p class="text-xl font-bold text-blue-400 mt-1" id="sharesDisplay">0.00</p>
+        </div>
+        <div class="stat-card">
+          <p class="text-xs text-gray-500">내 USDC 잔고</p>
+          <p class="text-xl font-bold text-green-400 mt-1" id="usdcDisplay">0.00</p>
+        </div>
+      </div>
+
+      <!-- Deposit -->
+      <div class="card p-4">
+        <p class="text-sm font-semibold text-gray-300 mb-3">💰 Deposit USDC → mETF</p>
+        <div class="flex gap-2">
+          <input type="number" id="depositAmt" placeholder="USDC 금액 (예: 1000)" value="1000" min="1" />
+          <button id="btnDeposit" onclick="deposit()" disabled
+            class="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold text-sm whitespace-nowrap transition">
+            입금
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">예상 mETF: <span id="expectedShares">—</span></p>
+      </div>
+
+      <!-- Redeem -->
+      <div class="card p-4">
+        <p class="text-sm font-semibold text-gray-300 mb-3">🔄 Redeem mETF → USDC</p>
+        <div class="flex gap-2">
+          <input type="number" id="redeemAmt" placeholder="mETF 수량" min="1" />
+          <button id="btnRedeem" onclick="redeem()" disabled
+            class="bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold text-sm whitespace-nowrap transition">
+            상환
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">예상 USDC: <span id="expectedUsdc">—</span></p>
+      </div>
+    </div>
+
+    <!-- Right: Simulation + Flow -->
+    <div class="col-span-12 lg:col-span-3 flex flex-col gap-4">
+
+      <!-- Cross-chain flow -->
+      <div class="card p-4">
+        <p class="text-xs text-gray-500 mb-3 font-semibold">크로스체인 플로우</p>
+        <div class="flex flex-col items-center gap-1 text-xs">
+          <div class="flow-step" id="flowUser">
+            <div class="icon bg-blue-900 border-2 border-blue-600">👤</div>
+            <span class="text-gray-400">User</span>
+          </div>
+          <div class="flow-arrow">↕</div>
+          <div class="flow-step" id="flowVault">
+            <div class="icon bg-blue-900 border-2 border-blue-700">🏦</div>
+            <span class="text-gray-400">ETFVault</span>
+            <span class="text-blue-400 font-semibold">(Base)</span>
+          </div>
+          <div class="flow-arrow">↕</div>
+          <div class="flow-step" id="flowBridge">
+            <div class="icon bg-green-900 border-2 border-green-700">⇄</div>
+            <span class="text-gray-400">Bridge</span>
+          </div>
+          <div class="flow-arrow">↕</div>
+          <div class="flow-step" id="flowSolana">
+            <div class="icon bg-purple-900 border-2 border-purple-700">◎</div>
+            <span class="text-gray-400">Executor</span>
+            <span class="text-purple-400 font-semibold">(Solana)</span>
+          </div>
+        </div>
+        <div id="flowStatus" class="text-center text-xs text-gray-500 mt-3">대기 중</div>
+      </div>
+
+      <!-- Simulation controls -->
+      <div class="card p-4">
+        <p class="text-xs text-gray-500 mb-3 font-semibold">시뮬레이션</p>
+        <div class="space-y-2">
+          <button onclick="simPriceUp()" disabled id="btnSimUp"
+            class="w-full bg-green-900 hover:bg-green-800 disabled:bg-gray-800 border border-green-700 text-green-300 px-3 py-2 rounded-lg text-xs font-semibold transition">
+            📈 가격 +20%
+          </button>
+          <button onclick="simPriceDown()" disabled id="btnSimDown"
+            class="w-full bg-red-900 hover:bg-red-800 disabled:bg-gray-800 border border-red-700 text-red-300 px-3 py-2 rounded-lg text-xs font-semibold transition">
+            📉 가격 −15%
+          </button>
+          <button onclick="simRebalance()" disabled id="btnRebalance"
+            class="w-full bg-yellow-900 hover:bg-yellow-800 disabled:bg-gray-800 border border-yellow-700 text-yellow-300 px-3 py-2 rounded-lg text-xs font-semibold transition">
+            ⚖️ 리밸런싱 50/25/25
+          </button>
+          <button onclick="simMaxShares()" disabled id="btnMaxShares"
+            class="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 px-3 py-2 rounded-lg text-xs font-semibold transition">
+            📊 전량 상환
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transaction Log -->
+  <div class="card p-5 mt-4">
+    <div class="flex items-center justify-between mb-3">
+      <p class="text-sm font-semibold text-gray-300">📋 트랜잭션 로그</p>
+      <button onclick="clearLog()" class="text-xs text-gray-500 hover:text-gray-300">지우기</button>
+    </div>
+    <div id="txLog" class="space-y-1 max-h-48 overflow-y-auto text-xs font-mono">
+      <div class="log-entry info">
+        <span class="text-gray-500">[ready]</span> Hardhat 노드(localhost:8545) 연결 대기 중...
+      </div>
+    </div>
+  </div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────────────────────────
+let provider, signer, userSigner;
+let contracts = {};
+let solana = {
+  aaplxUnits: 0n, tslaxUnits: 0n, nvdaxUnits: 0n,
+  totalShares: 0n,
+  prices: { aaplx: 150_000_000n, tslax: 200_000_000n, nvdax: 800_000_000n },
+};
+let isSetup = false;
+let chart;
+
+// ─── ABIs ──────────────────────────────────────────────────────────────────────
+const USDC_ABI = [
+  "function mint(address,uint256) external",
+  "function approve(address,uint256) external returns (bool)",
+  "function balanceOf(address) external view returns (uint256)",
+];
+const BRIDGE_ABI = [
+  "function setVault(address) external",
+  "function completeRedeem(address,uint256,uint256) external",
+  "event BridgeRequested(uint256 indexed depositId,address indexed sender,uint256 amount,bytes32 solanaRecipient)",
+];
+const ORACLE_ABI = [
+  "function setReporter(address,bool) external",
+  "function reportNAV(address,uint256) external",
+];
+const VAULT_ABI = [
+  "function deposit(uint256,address) external returns (uint256)",
+  "function redeem(uint256,address,address) external returns (uint256)",
+  "function balanceOf(address) external view returns (uint256)",
+  "function totalSupply() external view returns (uint256)",
+  "function navPerShare() external view returns (uint256)",
+  "function reportedNAV() external view returns (uint256)",
+  "function totalAssets() external view returns (uint256)",
+  "event RedeemRequested(uint256 indexed redeemId,address indexed user,uint256 shares,uint256 usdcExpected)",
+  "event DepositBridged(uint256 indexed depositId,address indexed user,uint256 usdcAmount,uint256 sharesMinted)",
+];
+
+// ─── Bytecodes (from artifacts) ────────────────────────────────────────────────
+// These are loaded from the compiled Hardhat artifacts via fetch
+let BYTECODES = {};
+
+async function loadBytecodes() {
+  const base = './contracts/artifacts/contracts';
+  const files = [
+    ['MockUSDC', `${base}/MockUSDC.sol/MockUSDC.json`],
+    ['MockBridge', `${base}/mocks/MockBridge.sol/MockBridge.json`],
+    ['MockNavOracle', `${base}/mocks/MockNavOracle.sol/MockNavOracle.json`],
+    ['ETFVault', `${base}/ETFVault.sol/ETFVault.json`],
+  ];
+  for (const [name, path] of files) {
+    const r = await fetch(path);
+    const json = await r.json();
+    BYTECODES[name] = { abi: json.abi, bytecode: json.bytecode };
+  }
+  log('info', '아티팩트 로드 완료');
+}
+
+// ─── Setup ─────────────────────────────────────────────────────────────────────
+async function setup() {
+  document.getElementById('btnSetup').disabled = true;
+  document.getElementById('btnSetup').textContent = '배포 중...';
+  try {
+    provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
+    const accounts = await provider.listAccounts();
+    signer = await provider.getSigner(accounts[0].address);    // deployer / coordinator
+    userSigner = await provider.getSigner(accounts[1].address); // user
+
+    log('info', `배포자: ${accounts[0].address.slice(0,10)}...`);
+    log('info', `사용자: ${accounts[1].address.slice(0,10)}...`);
+
+    await loadBytecodes();
+
+    // Deploy
+    log('info', 'MockUSDC 배포 중...');
+    const usdcF = new ethers.ContractFactory(BYTECODES.MockUSDC.abi, BYTECODES.MockUSDC.bytecode, signer);
+    const usdc = await (await usdcF.deploy()).waitForDeployment();
+
+    log('info', 'MockBridge 배포 중...');
+    const bridgeF = new ethers.ContractFactory(BYTECODES.MockBridge.abi, BYTECODES.MockBridge.bytecode, signer);
+    const bridge = await (await bridgeF.deploy(await usdc.getAddress())).waitForDeployment();
+
+    log('info', 'MockNavOracle 배포 중...');
+    const oracleF = new ethers.ContractFactory(BYTECODES.MockNavOracle.abi, BYTECODES.MockNavOracle.bytecode, signer);
+    const oracle = await (await oracleF.deploy()).waitForDeployment();
+
+    log('info', 'ETFVault (ERC-4626) 배포 중...');
+    const solanaTreasury = ethers.zeroPadBytes('0x01', 32);
+    const vaultF = new ethers.ContractFactory(BYTECODES.ETFVault.abi, BYTECODES.ETFVault.bytecode, signer);
+    const vault = await (await vaultF.deploy(
+      await usdc.getAddress(), await bridge.getAddress(),
+      await oracle.getAddress(), solanaTreasury
+    )).waitForDeployment();
+
+    // Wire up
+    await (await new ethers.Contract(await bridge.getAddress(), BRIDGE_ABI, signer).setVault(await vault.getAddress())).wait();
+    await (await new ethers.Contract(await usdc.getAddress(), USDC_ABI, signer).mint(await bridge.getAddress(), ethers.parseUnits('1000000', 6))).wait();
+    await (await new ethers.Contract(await oracle.getAddress(), ORACLE_ABI, signer).setReporter(await signer.getAddress(), true)).wait();
+
+    // Give user 5000 USDC
+    await (await new ethers.Contract(await usdc.getAddress(), USDC_ABI, signer).mint(await userSigner.getAddress(), ethers.parseUnits('5000', 6))).wait();
+
+    contracts.usdc = new ethers.Contract(await usdc.getAddress(), USDC_ABI, userSigner);
+    contracts.usdcDeployer = new ethers.Contract(await usdc.getAddress(), USDC_ABI, signer);
+    contracts.bridge = new ethers.Contract(await bridge.getAddress(), BRIDGE_ABI, signer);
+    contracts.oracle = new ethers.Contract(await oracle.getAddress(), ORACLE_ABI, signer);
+    contracts.vault = new ethers.Contract(await vault.getAddress(), VAULT_ABI, userSigner);
+    contracts.vaultDeployer = new ethers.Contract(await vault.getAddress(), VAULT_ABI, signer);
+    contracts.vaultAddress = await vault.getAddress();
+
+    log('success', `ETFVault: ${contracts.vaultAddress.slice(0,12)}...`);
+    log('success', '모든 컨트랙트 배포 완료! 사용자에게 5000 USDC 지급');
+
+    isSetup = true;
+    document.getElementById('setupBar').style.display = 'none';
+    enableButtons();
+    initChart();
+    await refresh();
+
+    // Listen for bridge events (visual only)
+    contracts.bridge.on('BridgeRequested', (depositId, sender, amount) => {
+      log('bridge', `[Bridge→Solana] 브릿지 요청: ${fmt(amount)} USDC (ID: ${depositId})`);
+      highlightFlow('bridge');
+    });
+
+  } catch(e) {
+    log('error', `오류: ${e.message}`);
+    document.getElementById('btnSetup').disabled = false;
+    document.getElementById('btnSetup').textContent = '🚀 배포 시작';
+  }
+}
+
+// ─── Deposit ───────────────────────────────────────────────────────────────────
+async function deposit() {
+  const amt = parseFloat(document.getElementById('depositAmt').value);
+  if (!amt || amt <= 0) return;
+  const usdc6 = ethers.parseUnits(amt.toString(), 6);
+  setBusy(true);
+  try {
+    highlightFlow('vault');
+    log('info', `Deposit 시작: ${amt} USDC → mETF`);
+
+    await (await contracts.usdc.approve(contracts.vaultAddress, usdc6)).wait();
+    const tx = await contracts.vault.deposit(usdc6, await userSigner.getAddress());
+    const receipt = await tx.wait();
+    log('success', `EVM: mETF 발행 완료 (tx: ${tx.hash.slice(0,12)}...)`);
+
+    // Parse shares minted from event
+    const iface = new ethers.Interface(VAULT_ABI);
+    let sharesMinted = usdc6; // fallback
+    for (const l of receipt.logs) {
+      try {
+        const parsed = iface.parseLog({ topics: l.topics, data: l.data });
+        if (parsed && parsed.name === 'DepositBridged') { sharesMinted = parsed.args[3]; break; }
+      } catch {}
+    }
+
+    // Coordinator: Solana mock swap
+    highlightFlow('solana');
+    const depositId = BigInt(receipt.blockNumber);
+    solanaMockDeposit(usdc6, sharesMinted);
+    await reportNAV();
+    log('bridge', `[Solana] AAPLx/TSLAx/NVDAx 포트폴리오 구성 완료`);
+
+    await refresh();
+    log('success', `완료: ${amt} USDC → ${fmt(sharesMinted)} mETF`);
+  } catch(e) { log('error', e.message); }
+  setBusy(false);
+  highlightFlow(null);
+}
+
+// ─── Redeem ────────────────────────────────────────────────────────────────────
+async function redeem() {
+  const amt = parseFloat(document.getElementById('redeemAmt').value);
+  if (!amt || amt <= 0) return;
+  const shares6 = ethers.parseUnits(amt.toString(), 6);
+  const userBalance = BigInt(await contracts.vault.balanceOf(await userSigner.getAddress()));
+  if (shares6 > userBalance) { log('error', 'mETF 잔고 부족'); return; }
+
+  setBusy(true);
+  try {
+    highlightFlow('vault');
+    log('info', `Redeem 시작: ${amt} mETF → USDC`);
+
+    const tx = await contracts.vault.redeem(shares6, await userSigner.getAddress(), await userSigner.getAddress());
+    const receipt = await tx.wait();
+    log('success', `EVM: mETF 소각 완료`);
+
+    // Parse redeemId
+    const iface = new ethers.Interface(VAULT_ABI);
+    let redeemId = 1n;
+    for (const l of receipt.logs) {
+      try {
+        const parsed = iface.parseLog({ topics: l.topics, data: l.data });
+        if (parsed && parsed.name === 'RedeemRequested') { redeemId = parsed.args[0]; break; }
+      } catch {}
+    }
+
+    // Coordinator: Solana sell
+    highlightFlow('solana');
+    const usdcOut = solanaMockRedeem(shares6);
+    log('bridge', `[Solana→Bridge] ${fmt(usdcOut)} USDC 반환 시작`);
+
+    highlightFlow('bridge');
+    const userAddr = await userSigner.getAddress();
+    await (await contracts.bridge.completeRedeem(userAddr, usdcOut, redeemId)).wait();
+    await reportNAV();
+    log('success', `[Bridge] Redeem 완료: ${fmt(usdcOut)} USDC 지급`);
+
+    await refresh();
+    log('success', `완료: ${amt} mETF → ${fmt(usdcOut)} USDC`);
+  } catch(e) { log('error', e.message); }
+  setBusy(false);
+  highlightFlow(null);
+}
+
+// ─── Solana mock state ─────────────────────────────────────────────────────────
+function solanaMockDeposit(usdcAmount, sharesMinted) {
+  const aaplxUsdc = usdcAmount * 4000n / 10000n;
+  const tslaxUsdc = usdcAmount * 3000n / 10000n;
+  const nvdaxUsdc = usdcAmount - aaplxUsdc - tslaxUsdc;
+  solana.aaplxUnits += aaplxUsdc * 1_000_000n / solana.prices.aaplx;
+  solana.tslaxUnits += tslaxUsdc * 1_000_000n / solana.prices.tslax;
+  solana.nvdaxUnits += nvdaxUsdc * 1_000_000n / solana.prices.nvdax;
+  solana.totalShares += sharesMinted;
+}
+
+function solanaMockRedeem(shares) {
+  if (solana.totalShares === 0n) return 0n;
+  const portUsdc = solanaPortfolioUsdc();
+  const usdcOut = portUsdc * shares / solana.totalShares;
+  solana.aaplxUnits -= solana.aaplxUnits * shares / solana.totalShares;
+  solana.tslaxUnits -= solana.tslaxUnits * shares / solana.totalShares;
+  solana.nvdaxUnits -= solana.nvdaxUnits * shares / solana.totalShares;
+  solana.totalShares -= shares;
+  return usdcOut;
+}
+
+function solanaPortfolioUsdc() {
+  return (
+    solana.aaplxUnits * solana.prices.aaplx / 1_000_000n +
+    solana.tslaxUnits * solana.prices.tslax / 1_000_000n +
+    solana.nvdaxUnits * solana.prices.nvdax / 1_000_000n
+  );
+}
+
+async function reportNAV() {
+  const nav = solanaPortfolioUsdc();
+  await (await contracts.oracle.reportNAV(contracts.vaultAddress, nav)).wait();
+}
+
+// ─── Simulation buttons ────────────────────────────────────────────────────────
+async function simPriceUp() {
+  solana.prices.aaplx = solana.prices.aaplx * 120n / 100n;
+  solana.prices.tslax = solana.prices.tslax * 120n / 100n;
+  solana.prices.nvdax = solana.prices.nvdax * 120n / 100n;
+  log('info', `📈 가격 +20%: AAPLx $${fmtPrice(solana.prices.aaplx)} | TSLAx $${fmtPrice(solana.prices.tslax)} | NVDAx $${fmtPrice(solana.prices.nvdax)}`);
+  if (isSetup) await reportNAV();
+  await refresh();
+}
+
+async function simPriceDown() {
+  solana.prices.aaplx = solana.prices.aaplx * 85n / 100n;
+  solana.prices.tslax = solana.prices.tslax * 85n / 100n;
+  solana.prices.nvdax = solana.prices.nvdax * 85n / 100n;
+  log('info', `📉 가격 -15%: AAPLx $${fmtPrice(solana.prices.aaplx)} | TSLAx $${fmtPrice(solana.prices.tslax)} | NVDAx $${fmtPrice(solana.prices.nvdax)}`);
+  if (isSetup) await reportNAV();
+  await refresh();
+}
+
+async function simRebalance() {
+  if (solana.totalShares === 0n) { log('error', '포트폴리오가 비어있습니다'); return; }
+  const portUsdc = solanaPortfolioUsdc();
+  solana.aaplxUnits = portUsdc * 5000n / 10000n * 1_000_000n / solana.prices.aaplx;
+  solana.tslaxUnits = portUsdc * 2500n / 10000n * 1_000_000n / solana.prices.tslax;
+  solana.nvdaxUnits = portUsdc * 2500n / 10000n * 1_000_000n / solana.prices.nvdax;
+  log('info', '⚖️ 리밸런싱: 50% AAPLx / 25% TSLAx / 25% NVDAx');
+  if (isSetup) await reportNAV();
+  await refresh();
+}
+
+async function simMaxShares() {
+  if (!isSetup) return;
+  const bal = BigInt(await contracts.vault.balanceOf(await userSigner.getAddress()));
+  if (bal === 0n) { log('error', '상환할 mETF 없음'); return; }
+  document.getElementById('redeemAmt').value = (Number(bal) / 1e6).toFixed(2);
+  await redeem();
+}
+
+// ─── UI helpers ────────────────────────────────────────────────────────────────
+async function refresh() {
+  if (!isSetup) return;
+  const userAddr = await userSigner.getAddress();
+  const [shares, usdc, nav, nps] = await Promise.all([
+    contracts.vault.balanceOf(userAddr),
+    contracts.usdc.balanceOf(userAddr),
+    contracts.vault.reportedNAV(),
+    contracts.vault.navPerShare(),
+  ]);
+
+  document.getElementById('sharesDisplay').textContent = fmt(BigInt(shares));
+  document.getElementById('usdcDisplay').textContent = fmt(BigInt(usdc));
+  document.getElementById('navDisplay').textContent = '$' + fmt(BigInt(nav));
+  document.getElementById('npsDisplay').textContent = '$' + (Number(nps) / 1e18).toFixed(4);
+  document.getElementById('totalNavDisplay').textContent = '$' + fmt(BigInt(nav));
+
+  // Prices
+  document.getElementById('priceAapl').textContent = '$' + fmtPrice(solana.prices.aaplx);
+  document.getElementById('priceTsla').textContent = '$' + fmtPrice(solana.prices.tslax);
+  document.getElementById('priceNvda').textContent = '$' + fmtPrice(solana.prices.nvdax);
+
+  // Portfolio values
+  const aaplxV = solana.aaplxUnits * solana.prices.aaplx / 1_000_000n;
+  const tslaxV = solana.tslaxUnits * solana.prices.tslax / 1_000_000n;
+  const nvdaxV = solana.nvdaxUnits * solana.prices.nvdax / 1_000_000n;
+  document.getElementById('aaplxVal').textContent = '$' + fmt(aaplxV);
+  document.getElementById('tslaxVal').textContent = '$' + fmt(tslaxV);
+  document.getElementById('nvdaxVal').textContent = '$' + fmt(nvdaxV);
+
+  updateChart([Number(aaplxV), Number(tslaxV), Number(nvdaxV)]);
+
+  // Expected shares preview
+  const depositVal = parseFloat(document.getElementById('depositAmt').value) || 0;
+  if (depositVal > 0 && BigInt(nav) > 0n) {
+    const supply = BigInt(await contracts.vault.totalSupply());
+    const depositUsdc6 = BigInt(Math.round(depositVal * 1e6));
+    const expectedS = supply === 0n ? depositUsdc6 : depositUsdc6 * supply / BigInt(nav);
+    document.getElementById('expectedShares').textContent = fmt(expectedS) + ' mETF';
+    const expectedU = supply === 0n ? depositUsdc6 : depositUsdc6;
+    const redeemVal = parseFloat(document.getElementById('redeemAmt').value) || 0;
+    if (redeemVal > 0 && supply > 0n) {
+      const redeemShares = BigInt(Math.round(redeemVal * 1e6));
+      const portUsdc = solanaPortfolioUsdc();
+      const usdcOut = portUsdc * redeemShares / supply;
+      document.getElementById('expectedUsdc').textContent = '$' + fmt(usdcOut) + ' USDC';
+    }
+  }
+}
+
+function initChart() {
+  const ctx = document.getElementById('portfolioChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['AAPLx', 'TSLAx', 'NVDAx'],
+      datasets: [{
+        data: [40, 30, 30],
+        backgroundColor: ['#3b82f6', '#8b5cf6', '#22c55e'],
+        borderColor: '#0a0f1e',
+        borderWidth: 3,
+        hoverOffset: 8,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '70%',
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: (c) => ` ${c.label}: $${(c.raw / 1e6).toFixed(2)}` }
+      }},
+      animation: { animateRotate: true, duration: 600 },
+    }
+  });
+}
+
+function updateChart(values) {
+  if (!chart) return;
+  const total = values.reduce((a, b) => a + b, 0);
+  if (total === 0) { chart.data.datasets[0].data = [40, 30, 30]; }
+  else { chart.data.datasets[0].data = values; }
+  chart.update();
+}
+
+function highlightFlow(step) {
+  const steps = { user: 'flowUser', vault: 'flowVault', bridge: 'flowBridge', solana: 'flowSolana' };
+  const labels = {
+    vault: '📥 Vault 처리 중...', bridge: '⇄ 브릿지 통과 중...', solana: '◎ Solana 실행 중...', null: '대기 중'
+  };
+  Object.values(steps).forEach(id => document.getElementById(id)?.classList.remove('active'));
+  if (step && steps[step]) document.getElementById(steps[step])?.classList.add('active');
+  document.getElementById('flowStatus').textContent = labels[step] ?? '대기 중';
+}
+
+function log(type, msg) {
+  const el = document.getElementById('txLog');
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  const icons = { success: '✅', info: '→', bridge: '⇄', error: '❌' };
+  div.innerHTML = `<span class="text-gray-500">[${time}]</span> ${icons[type] || '→'} ${msg}`;
+  el.prepend(div);
+}
+
+function clearLog() {
+  document.getElementById('txLog').innerHTML = '';
+}
+
+function fmt(v) { return (Number(v) / 1e6).toFixed(2); }
+function fmtPrice(v) { return (Number(v) / 1e6).toFixed(0); }
+
+function enableButtons() {
+  ['btnDeposit','btnRedeem','btnSimUp','btnSimDown','btnRebalance','btnMaxShares']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.disabled = false; });
+}
+
+function setBusy(b) {
+  ['btnDeposit','btnRedeem','btnSimUp','btnSimDown','btnRebalance','btnMaxShares']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.disabled = b; });
+}
+
+// Live preview on input
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('depositAmt').addEventListener('input', () => isSetup && refresh());
+  document.getElementById('redeemAmt').addEventListener('input', () => isSetup && refresh());
+});
+</script>
+</body>
+</html>

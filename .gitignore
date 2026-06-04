@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+.env
+*.log
+
+# Hardhat
+contracts/cache/
+contracts/artifacts/
+contracts/typechain-types/
+contracts/coverage/
+contracts/coverage.json
+
+# Anchor / Rust
+programs/target/
+programs/.anchor/
+
+# Misc
+.DS_Store
+*.local

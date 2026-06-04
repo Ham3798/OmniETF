@@ -1,0 +1,22 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "demo": "ts-node src/demo.ts",
+    "coordinator": "ts-node src/coordinator.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/web3.js": "^1.98.4",
+    "@types/node": "^25.9.1",
+    "ethers": "^6.16.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
