@@ -345,6 +345,7 @@ CCTP는 settlement-control rail입니다.
 
 ---
 layout: default
+---
 
 # Trust Model — Who / What / Assumptions
 
@@ -414,7 +415,7 @@ layout: default
 
 | 원칙 | 적용 |
 |---|---|
-| mint는 실행 후에만 | `requestDeposit` 시점에는 mETF를 주지 않음 |
+| mint는 실행 후에만 | `requestDeposit` 시점에는 mETF를 주지 않음 |f
 | settlement와 execution 분리 | CCTP 수신과 Solana basket allocation을 별도 stage로 표시 |
 | NAV는 reporter가 확정 | executed value가 Base vault state에 반영되어야 claim 가능 |
 | redeem은 비동기 claim | share escrow 이후 backing USDC가 있을 때 지급 |
@@ -428,21 +429,23 @@ layout: default
 
 ```mermaid
 sequenceDiagram
-  participant User
-  participant BaseVault
-  participant CCTP
-  participant SolanaTreasury
-  participant Reporter
-  User->>BaseVault: 1) requestDeposit(USDC)
-  BaseVault->>CCTP: 2) burn / send message
-  CCTP->>SolanaTreasury: 3) mint USDC
-  SolanaTreasury->>SolanaTreasury: 4) allocate basket
+  participant U as User
+  participant BV as BaseVault
+  participant CP as CCTP
+  participant ST as SolanaTreasury
+  participant R as Reporter
+
+  U->>BV: Step 1 - requestDeposit(USDC)
+  BV->>CP: Step 2 - burn / send message
+  CP->>ST: Step 3 - mint USDC
+  ST->>ST: Step 4 - allocate basket
+
   alt execution succeeded
-    Reporter->>BaseVault: 5) finalizeDeposit(executedValue)
-    User->>BaseVault: 6) claim mETF
+    R->>BV: Step 5 - finalizeDeposit(executedValue)
+    U->>BV: Step 6 - claim mETF
   else execution failed
-    Reporter->>BaseVault: failure: finalizeDepositFailed()
-    BaseVault->>User: refund or retry path
+    R->>BV: finalizeDepositFailed()
+    BV->>U: refund or retry path
   end
 ```
 
@@ -454,19 +457,21 @@ layout: default
 
 ```mermaid
 sequenceDiagram
-  participant User
-  participant BaseVault
-  participant SolanaTreasury
-  participant CCTP
-  User->>BaseVault: 1) requestRedeem(shares)
-  BaseVault->>BaseVault: 2) escrow shares
-  SolanaTreasury->>SolanaTreasury: 3) sell / settle reserve
-  SolanaTreasury->>CCTP: 4) burn USDC
-  CCTP->>BaseVault: 5) mint USDC
+  participant U as User
+  participant BV as BaseVault
+  participant ST as SolanaTreasury
+  participant CP as CCTP
+
+  U->>BV: Step 1 - requestRedeem(shares)
+  BV->>BV: Step 2 - escrow shares
+  ST->>ST: Step 3 - sell / settle reserve
+  ST->>CP: Step 4 - burn USDC
+  CP->>BV: Step 5 - mint USDC
+
   alt settlement succeeded
-    User->>BaseVault: 6) claimRedeem()
-  else settlement delayed/failed
-    BaseVault->>User: payout pending / wait for evidence
+    U->>BV: Step 6 - claimRedeem()
+  else settlement delayed or failed
+    BV->>U: payout pending / wait for evidence
   end
 ```
 
