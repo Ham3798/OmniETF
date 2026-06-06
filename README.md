@@ -56,3 +56,13 @@ npm run smoke:cross-local
 ```
 
 See `docs/local-evm-svm.md` for details and trust-boundary notes.
+
+### Public testnet PoC (Base Sepolia ↔ Solana Devnet)
+
+```bash
+npm run ccip:base-solana:check
+npm run deploy:solana-devnet
+npm run deploy:base-sepolia
+```
+
+Then relay Base Sepolia OmniETF intents to the Solana Devnet portfolio program with `npm run relay:testnet:once <allocation|redeem|rebalance> <requestId>`. See `docs/testnet-poc-plan.md` for funding, environment variables, CCIP token-transfer verification, and acceptance criteria.

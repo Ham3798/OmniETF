@@ -2,11 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseUnits, type Abi } from 'viem';
 import {
+  CHAIN_LABEL,
   DEMO_MODE,
   DEMO_USER,
+  EXPECTED_CHAIN_ID,
+  READ_ONLY,
   RELAYER_URL,
   assetIds,
   contracts,
+  evmTxUrl,
   nav,
   parseShares,
   parseUsdc,
@@ -14,6 +18,7 @@ import {
   shares,
   synthetic,
   usdc,
+  solanaTxUrl,
   wait,
   walletClient,
 } from './contracts';
@@ -32,6 +37,8 @@ type Snapshot = {
   aaplx: bigint;
   tslax: bigint;
   nvdax: bigint;
+  remoteLastRequestId: bigint;
+  remoteLastAction: bigint;
   chainOk: boolean;
   relayerOk: boolean;
   remoteSource: 'SVM program' | 'EVM mock';
@@ -76,6 +83,8 @@ const initialSnapshot: Snapshot = {
   aaplx: 0n,
   tslax: 0n,
   nvdax: 0n,
+  remoteLastRequestId: 0n,
+  remoteLastAction: 0n,
   chainOk: false,
   relayerOk: false,
   remoteSource: DEMO_MODE === 'svm' ? 'SVM program' : 'EVM mock',
@@ -105,7 +114,8 @@ function App() {
   const [log, setLog] = useState<string[]>([]);
   const [done, setDone] = useState<DoneState>(initialDone);
 
-  const stepStates = useMemo(() => computeSteps(done), [done]);
+  const effectiveDone = useMemo(() => READ_ONLY ? deriveDone(snapshot, done) : done, [snapshot, done]);
+  const stepStates = useMemo(() => computeSteps(effectiveDone), [effectiveDone]);
   const isSvmMode = DEMO_MODE === 'svm';
 
   async function refresh() {
@@ -136,13 +146,15 @@ function App() {
       aaplx: remote.aaplx,
       tslax: remote.tslax,
       nvdax: remote.nvdax,
-      chainOk: chainId === 31337,
+      remoteLastRequestId: remote.lastRequestId,
+      remoteLastAction: remote.lastAction,
+      chainOk: chainId === EXPECTED_CHAIN_ID,
       relayerOk: remote.relayerOk,
       remoteSource: remote.source,
     });
   }
 
-  async function readRemoteState(): Promise<{ aaplx: bigint; tslax: bigint; nvdax: bigint; relayerOk: boolean; source: Snapshot['remoteSource'] }> {
+  async function readRemoteState(): Promise<{ aaplx: bigint; tslax: bigint; nvdax: bigint; lastRequestId: bigint; lastAction: bigint; relayerOk: boolean; source: Snapshot['remoteSource'] }> {
     if (isSvmMode) {
       try {
         const response = await fetch(`${RELAYER_URL}/state`);
@@ -152,21 +164,23 @@ function App() {
           aaplx: BigInt(body.svm.aaplx),
           tslax: BigInt(body.svm.tslax),
           nvdax: BigInt(body.svm.nvdax),
+          lastRequestId: BigInt(body.svm.lastRequestId ?? 0),
+          lastAction: BigInt(body.svm.lastAction ?? 0),
           relayerOk: true,
           source: 'SVM program',
         };
       } catch {
-        return { aaplx: 0n, tslax: 0n, nvdax: 0n, relayerOk: false, source: 'SVM program' };
+        return { aaplx: 0n, tslax: 0n, nvdax: 0n, lastRequestId: 0n, lastAction: 0n, relayerOk: false, source: 'SVM program' };
       }
     }
 
-    if (!contracts.portfolio) return { aaplx: 0n, tslax: 0n, nvdax: 0n, relayerOk: false, source: 'EVM mock' };
+    if (!contracts.portfolio) return { aaplx: 0n, tslax: 0n, nvdax: 0n, lastRequestId: 0n, lastAction: 0n, relayerOk: false, source: 'EVM mock' };
     const [aaplx, tslax, nvdax] = await Promise.all([
       publicClient.readContract({ ...contracts.portfolio, functionName: 'aaplxBalance' }),
       publicClient.readContract({ ...contracts.portfolio, functionName: 'tslaxBalance' }),
       publicClient.readContract({ ...contracts.portfolio, functionName: 'nvdaxBalance' }),
     ]);
-    return { aaplx: aaplx as bigint, tslax: tslax as bigint, nvdax: nvdax as bigint, relayerOk: true, source: 'EVM mock' };
+    return { aaplx: aaplx as bigint, tslax: tslax as bigint, nvdax: nvdax as bigint, lastRequestId: 0n, lastAction: 0n, relayerOk: true, source: 'EVM mock' };
   }
 
   useEffect(() => {
@@ -195,7 +209,8 @@ function App() {
   }
 
   async function tx(address: `0x${string}`, abi: Abi, functionName: string, args: readonly unknown[] = []) {
-    const hash = await walletClient.writeContract({ address, abi, functionName, args });
+    if (!walletClient) throw new Error('Read-only testnet UI: private-key signing is disabled. Use scripts/CLI for mutating EVM transactions.');
+    const hash = await (walletClient as any).writeContract({ address, abi, functionName, args });
     await wait(hash);
     return hash;
   }
@@ -228,14 +243,26 @@ function App() {
     <main>
       <section className="hero">
         <div>
-          <p className="eyebrow">Local {isSvmMode ? 'EVM ↔ SVM' : 'Mock'} PoC</p>
+          <p className="eyebrow">{CHAIN_LABEL} {isSvmMode ? 'EVM ↔ SVM' : 'Mock'} PoC</p>
           <h1>OmniETF Cross-Chain Flow</h1>
           <p className="subtitle">EVM에서 USDC를 lock하고, bridge/relayer를 통해 SVM basket allocation을 실행한 뒤, snapshot ack 후 mETF를 mint/redeem합니다.</p>
         </div>
         <div className="status-stack">
-          <div className={snapshot.chainOk ? 'badge ok' : 'badge warn'}>{snapshot.chainOk ? 'Anvil 31337 connected' : 'Check Anvil'}</div>
+          <div className={snapshot.chainOk ? 'badge ok' : 'badge warn'}>{snapshot.chainOk ? `${CHAIN_LABEL} connected` : `Check ${CHAIN_LABEL} RPC`}</div>
           <div className={snapshot.relayerOk ? 'badge ok' : 'badge warn'}>{snapshot.remoteSource}{isSvmMode && !snapshot.relayerOk ? ' / relayer offline' : ' online'}</div>
+          {READ_ONLY ? <div className="badge warn">read-only UI</div> : <div className="badge ok">signing enabled</div>}
         </div>
+      </section>
+
+      <section className="panel">
+        <h2>Deployment</h2>
+        <div className="address-grid">
+          <Address label="Manager" value={contracts.manager.address} />
+          <Address label="Share" value={contracts.share.address} />
+          <Address label="MockUSDC" value={contracts.usdc.address} />
+          <Address label="Bridge" value={contracts.bridge.address} />
+        </div>
+        <p className="hint">{READ_ONLY ? '테스트넷 UI는 현재 조회 중심입니다. Base 트랜잭션 생성은 CLI 또는 별도 지갑 연동으로 실행하고, relayer 서버가 켜져 있으면 SVM 상태를 함께 조회합니다.' : 'Signing is enabled for this deployment.'}</p>
       </section>
 
       <section className="grid metrics">
@@ -245,6 +272,7 @@ function App() {
         <Metric label="Acked Remote Reserve" value={usdc(snapshot.portfolioValue)} />
         <Metric label="Bridge Escrow" value={usdc(snapshot.bridgeUsdc)} />
         <Metric label="Claimable" value={usdc(snapshot.claimable)} />
+        <Metric label="SVM Last Action" value={snapshot.remoteLastAction === 1n ? 'Allocate' : snapshot.remoteLastAction === 2n ? 'Redeem' : snapshot.remoteLastAction === 3n ? 'Rebalance' : 'None'} />
       </section>
 
       <section className="panel">
@@ -275,10 +303,11 @@ function App() {
             <input value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} />
           </label>
           <div className="button-row">
-            <Action label="1. EVM Approve USDC" busy={busy} onClick={() => run('Approve USDC', () => tx(contracts.usdc.address, contracts.usdc.abi, 'approve', [contracts.manager.address, parseUsdc(depositAmount)]).then(() => setDone((old) => ({ ...old, approved: true }))))} />
+            <Action label="1. EVM Approve USDC" busy={busy} disabled={READ_ONLY} onClick={() => run('Approve USDC', () => tx(contracts.usdc.address, contracts.usdc.abi, 'approve', [contracts.manager.address, parseUsdc(depositAmount)]).then(() => setDone((old) => ({ ...old, approved: true }))))} />
             <Action
               label="2. EVM Request Deposit / Lock"
               busy={busy}
+              disabled={READ_ONLY}
               onClick={() =>
                 run('Request Deposit', async () => {
                   const next = (await publicClient.readContract({ ...contracts.manager, functionName: 'nextRequestId' })) as bigint;
@@ -321,7 +350,7 @@ function App() {
           <Action
             label="Run Rebalance / NAV Sync"
             busy={busy}
-            disabled={!done.allocationAcked}
+            disabled={READ_ONLY || !done.allocationAcked}
             onClick={() =>
               run('Rebalance / NAV Sync', async () => {
                 if (!isSvmMode) {
@@ -349,7 +378,7 @@ function App() {
             <Action
               label="6. EVM Request Redeem / Burn"
               busy={busy}
-              disabled={!done.allocationAcked}
+              disabled={READ_ONLY || !done.allocationAcked}
               onClick={() =>
                 run('Request Redeem', async () => {
                   const next = (await publicClient.readContract({ ...contracts.manager, functionName: 'nextRequestId' })) as bigint;
@@ -368,7 +397,7 @@ function App() {
                 setDone((old) => ({ ...old, redeemExecuted: true, redeemAcked: true }));
               })}
             />
-            <Action label="10. EVM Claim USDC" busy={busy} disabled={redeemId === null || !done.redeemAcked} onClick={() => run('Claim USDC', () => tx(contracts.manager.address, contracts.manager.abi, 'claimRedeem', [redeemId]).then(() => setDone((old) => ({ ...old, claimed: true }))))} />
+            <Action label="10. EVM Claim USDC" busy={busy} disabled={READ_ONLY || redeemId === null || !done.redeemAcked} onClick={() => run('Claim USDC', () => tx(contracts.manager.address, contracts.manager.abi, 'claimRedeem', [redeemId]).then(() => setDone((old) => ({ ...old, claimed: true }))))} />
           </div>
           <p className="hint">Redeem request id: {redeemId ? `#${redeemId.toString()}` : 'not requested'} · Request 시 mETF가 먼저 burn되고, remote sell ack 후 USDC가 claimable이 됩니다.</p>
         </div>
@@ -386,6 +415,12 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><p>{label}</p><strong>{value}</strong></div>;
 }
 
+function Address({ label, value }: { label: string; value: string }) {
+  const evmBase = evmTxUrl('');
+  const href = value.startsWith('0x') && evmBase ? `${evmBase.replace('/tx/', '/address/')}${value}` : value.startsWith('0x') ? undefined : solanaTxUrl(value);
+  return <div className="address-card"><p>{label}</p>{href ? <a href={href} target="_blank" rel="noreferrer">{value}</a> : <code>{value}</code>}</div>;
+}
+
 function Action({ label, busy, disabled, onClick }: { label: string; busy: string | null; disabled?: boolean; onClick: () => void }) {
   return <button onClick={onClick} disabled={Boolean(busy) || disabled}>{busy === label ? 'Working...' : label}</button>;
 }
@@ -397,6 +432,22 @@ function Bar({ label, amount, target, svm }: { label: string; amount: bigint; ta
       <code>{svm ? synthetic(amount) : `${Number(amount) / 1e18}`}</code>
     </div>
   );
+}
+
+function deriveDone(snapshot: Snapshot, current: DoneState): DoneState {
+  const hasRemotePortfolio = snapshot.portfolioValue > 0n || snapshot.remoteLastAction > 0n;
+  const hasRedeemed = snapshot.remoteLastAction === 2n;
+  return {
+    approved: current.approved || snapshot.nextRequestId > 1n || hasRemotePortfolio,
+    depositRequested: current.depositRequested || snapshot.nextRequestId > 1n || hasRemotePortfolio,
+    allocationExecuted: current.allocationExecuted || hasRemotePortfolio,
+    allocationAcked: current.allocationAcked || snapshot.portfolioValue > 0n || snapshot.shareBalance > 0n,
+    rebalanced: current.rebalanced || snapshot.remoteLastAction === 3n || snapshot.remoteLastRequestId >= 2n,
+    redeemRequested: current.redeemRequested || hasRedeemed,
+    redeemExecuted: current.redeemExecuted || hasRedeemed,
+    redeemAcked: current.redeemAcked || hasRedeemed,
+    claimed: current.claimed || (hasRedeemed && snapshot.claimable === 0n),
+  };
 }
 
 function computeSteps(done: DoneState): StepState[] {

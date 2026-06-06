@@ -21,7 +21,14 @@
     "relay:once": "tsx scripts/relayer-local.ts --once",
     "smoke:cross-local": "tsx scripts/cross-smoke.ts",
     "demo:cross-local": "./scripts/cross-local.sh",
-    "stop:local": "./scripts/stop-local.sh"
+    "stop:local": "./scripts/stop-local.sh",
+    "deploy:base-sepolia": "npm run build:contracts && CHAIN_NAME=base-sepolia EXPECTED_CHAIN_ID=84532 DEPLOYMENT_FILE=deployments/base-sepolia.json BRIDGE_MODE=svm tsx scripts/deploy-local.ts",
+    "deploy:solana-devnet": "SOLANA_CLUSTER=devnet SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com} tsx scripts/deploy-svm.ts",
+    "relayer:testnet": "EVM_DEPLOYMENT_FILE=deployments/base-sepolia.json SVM_DEPLOYMENT_FILE=deployments/svm-devnet.json tsx scripts/relayer-local.ts",
+    "relay:testnet:once": "EVM_DEPLOYMENT_FILE=deployments/base-sepolia.json SVM_DEPLOYMENT_FILE=deployments/svm-devnet.json tsx scripts/relayer-local.ts --once",
+    "ccip:base-solana:check": "tsx scripts/ccip-base-solana-check.ts",
+    "ccip:base-solana:token": "tsx scripts/ccip-base-to-solana-token.ts",
+    "web:testnet": "./scripts/frontend-testnet.sh"
   },
   "devDependencies": {
     "@slidev/cli": "^52.14.2",

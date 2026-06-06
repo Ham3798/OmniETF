@@ -8,15 +8,15 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
-import { createPublicClient, createWalletClient, http, type Abi } from 'viem';
+import { createPublicClient, createWalletClient, defineChain, http, type Abi, type Chain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { foundry } from 'viem/chains';
-import localDeployment from '../deployments/local.json' assert { type: 'json' };
-import svmDeployment from '../deployments/svm-local.json' assert { type: 'json' };
+import { baseSepolia, foundry } from 'viem/chains';
 import bridgeArtifact from '../contracts/out/LocalSvmBridgeAdapter.sol/LocalSvmBridgeAdapter.json' assert { type: 'json' };
 
 const PORT = Number(process.env.RELAYER_PORT ?? 8787);
 const SCALE_TO_WAD = 10n ** 12n;
+const EVM_DEPLOYMENT_FILE = process.env.EVM_DEPLOYMENT_FILE ?? 'deployments/local.json';
+const SVM_DEPLOYMENT_FILE = process.env.SVM_DEPLOYMENT_FILE ?? 'deployments/svm-local.json';
 
 type SvmState = {
   aaplx: bigint;
@@ -34,11 +34,50 @@ type Message = {
   status: number;
 };
 
-const account = privateKeyToAccount(localDeployment.demoPrivateKey as `0x${string}`);
-const publicClient = createPublicClient({ chain: foundry, transport: http(localDeployment.rpcUrl) });
-const walletClient = createWalletClient({ account, chain: foundry, transport: http(localDeployment.rpcUrl) });
+type EvmDeployment = {
+  chainName?: string;
+  chainId: number;
+  rpcUrl: string;
+  demoPrivateKey?: `0x${string}`;
+  contracts: {
+    LocalSvmBridgeAdapter?: string;
+    MockBridgeAdapter?: string;
+    bridge?: string;
+  };
+};
+
+type SvmDeployment = {
+  rpcUrl: string;
+  programId: string;
+  state: string;
+  payerKeypair: string;
+};
+
+const localDeployment = JSON.parse(await readFile(EVM_DEPLOYMENT_FILE, 'utf8')) as EvmDeployment;
+const svmDeployment = JSON.parse(await readFile(SVM_DEPLOYMENT_FILE, 'utf8')) as SvmDeployment;
+
+function chainFor(chainId: number): Chain {
+  if (chainId === foundry.id) return foundry;
+  if (chainId === baseSepolia.id) return baseSepolia;
+  return defineChain({
+    id: chainId,
+    name: localDeployment.chainName ?? `chain-${chainId}`,
+    nativeCurrency: { name: 'Native', symbol: 'NATIVE', decimals: 18 },
+    rpcUrls: { default: { http: [localDeployment.rpcUrl] } },
+  });
+}
+
+function relayerPrivateKey(): `0x${string}` | undefined {
+  return localDeployment.demoPrivateKey ?? (process.env.DEPLOYER_PRIVATE_KEY as `0x${string}` | undefined);
+}
+
+const privateKey = relayerPrivateKey();
+const account = privateKey ? privateKeyToAccount(privateKey) : null;
+const chain = chainFor(localDeployment.chainId);
+const publicClient = createPublicClient({ chain, transport: http(localDeployment.rpcUrl) });
+const walletClient = account ? createWalletClient({ account, chain, transport: http(localDeployment.rpcUrl) }) : null;
 const bridge = {
-  address: (localDeployment.contracts.LocalSvmBridgeAdapter ?? localDeployment.contracts.MockBridgeAdapter) as `0x${string}`,
+  address: (localDeployment.contracts.LocalSvmBridgeAdapter ?? localDeployment.contracts.bridge ?? localDeployment.contracts.MockBridgeAdapter) as `0x${string}`,
   abi: bridgeArtifact.abi as Abi,
 };
 const connection = new Connection(svmDeployment.rpcUrl, 'confirmed');
@@ -103,6 +142,9 @@ async function readMessage(requestId: bigint): Promise<Message> {
 }
 
 async function ack(functionName: 'ackAllocation' | 'ackRedeem' | 'ackRebalance', args: readonly unknown[]) {
+  if (!walletClient) {
+    throw new Error(`DEPLOYER_PRIVATE_KEY is required to relay/ack EVM transactions for ${EVM_DEPLOYMENT_FILE}. /state remains available without it.`);
+  }
   const hash = await walletClient.writeContract({ ...bridge, functionName, args });
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
@@ -115,26 +157,26 @@ async function relay(kind: string, requestIdText: string) {
 
   if (kind === 'allocation') {
     if (message.messageType !== 1) throw new Error(`Request #${requestId} is not Allocation`);
-    await sendSvm(instruction(1, requestId, message.amount));
+    const svmTx = await sendSvm(instruction(1, requestId, message.amount));
     const state = await readSvmState();
-    const hash = await ack('ackAllocation', [requestId, snapshot(state)]);
-    return { requestId: requestId.toString(), kind, evmTx: hash, svm: stringifyState(state) };
+    const evmTx = await ack('ackAllocation', [requestId, snapshot(state)]);
+    return { requestId: requestId.toString(), kind, evmTx, svmTx, svm: stringifyState(state) };
   }
 
   if (kind === 'redeem') {
     if (message.messageType !== 2) throw new Error(`Request #${requestId} is not Redeem`);
-    await sendSvm(instruction(2, requestId, message.amount));
+    const svmTx = await sendSvm(instruction(2, requestId, message.amount));
     const state = await readSvmState();
-    const hash = await ack('ackRedeem', [requestId, message.amount, snapshot(state)]);
-    return { requestId: requestId.toString(), kind, returnedUsdc: message.amount.toString(), evmTx: hash, svm: stringifyState(state) };
+    const evmTx = await ack('ackRedeem', [requestId, message.amount, snapshot(state)]);
+    return { requestId: requestId.toString(), kind, returnedUsdc: message.amount.toString(), evmTx, svmTx, svm: stringifyState(state) };
   }
 
   if (kind === 'rebalance') {
     if (message.messageType !== 3) throw new Error(`Request #${requestId} is not Rebalance`);
-    await sendSvm(instruction(3, requestId));
+    const svmTx = await sendSvm(instruction(3, requestId));
     const state = await readSvmState();
-    const hash = await ack('ackRebalance', [requestId, snapshot(state)]);
-    return { requestId: requestId.toString(), kind, evmTx: hash, svm: stringifyState(state) };
+    const evmTx = await ack('ackRebalance', [requestId, snapshot(state)]);
+    return { requestId: requestId.toString(), kind, evmTx, svmTx, svm: stringifyState(state) };
   }
 
   throw new Error(`Unknown relay kind: ${kind}`);
@@ -145,7 +187,9 @@ function stringifyState(state: SvmState) {
 }
 
 async function handle(url: URL) {
-  if (url.pathname === '/health') return { ok: true, mode: 'local-svm-relayer' };
+  if (url.pathname === '/health') {
+    return { ok: true, mode: 'evm-svm-relayer', canRelay: Boolean(walletClient), evmDeployment: EVM_DEPLOYMENT_FILE, svmDeployment: SVM_DEPLOYMENT_FILE };
+  }
   if (url.pathname === '/state') return { ok: true, svm: stringifyState(await readSvmState()) };
   const match = url.pathname.match(/^\/relay\/(allocation|redeem|rebalance)\/(\d+)$/);
   if (match) return { ok: true, result: await relay(match[1], match[2]) };
@@ -174,6 +218,6 @@ if (process.argv[2] === '--once') {
       res.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
     }
   }).listen(PORT, '127.0.0.1', () => {
-    console.log(`Local EVM↔SVM relayer listening on http://127.0.0.1:${PORT}`);
+    console.log(`EVM↔SVM relayer listening on http://127.0.0.1:${PORT}`);
   });
 }

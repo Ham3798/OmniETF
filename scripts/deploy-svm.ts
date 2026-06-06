@@ -14,10 +14,14 @@ import {
 } from '@solana/web3.js';
 
 const RPC_URL = process.env.SOLANA_RPC_URL ?? 'http://127.0.0.1:8899';
+const SOLANA_CLUSTER = process.env.SOLANA_CLUSTER ?? (RPC_URL.includes('devnet') ? 'devnet' : 'local');
 const PROGRAM_DIR = 'programs/omnietf-portfolio';
 const PROGRAM_SO = join(PROGRAM_DIR, 'target', 'deploy', 'omnietf_portfolio.so');
 const PROGRAM_KEYPAIR = join(PROGRAM_DIR, 'target', 'deploy', 'omnietf_portfolio-keypair.json');
-const PAYER_PATH = 'deployments/solana-payer.json';
+const PAYER_PATH = process.env.SOLANA_PAYER_KEYPAIR ?? process.env.PAYER_PATH ?? (SOLANA_CLUSTER === 'devnet' ? 'deployments/solana-devnet-payer.json' : 'deployments/solana-payer.json');
+const DEPLOYMENT_FILE = process.env.SVM_DEPLOYMENT_FILE ?? process.env.DEPLOYMENT_FILE ?? (SOLANA_CLUSTER === 'devnet' ? 'deployments/svm-devnet.json' : 'deployments/svm-local.json');
+const MIN_PAYER_BALANCE_SOL = Number(process.env.MIN_PAYER_BALANCE_SOL ?? (SOLANA_CLUSTER === 'devnet' ? 2 : 1));
+const AIRDROP_SOL = Number(process.env.AIRDROP_SOL ?? (SOLANA_CLUSTER === 'devnet' ? 2 : 5));
 const STATE_SPACE = 88;
 
 async function readKeypair(path: string): Promise<Keypair> {
@@ -34,9 +38,17 @@ async function ensurePayer(connection: Connection): Promise<Keypair> {
   if (!existsSync(PAYER_PATH)) await writeKeypair(PAYER_PATH, payer);
 
   const balance = await connection.getBalance(payer.publicKey);
-  if (balance < LAMPORTS_PER_SOL) {
-    const sig = await connection.requestAirdrop(payer.publicKey, 5 * LAMPORTS_PER_SOL);
-    await connection.confirmTransaction(sig, 'confirmed');
+  const minimumBalance = Math.ceil(MIN_PAYER_BALANCE_SOL * LAMPORTS_PER_SOL);
+  if (balance < minimumBalance) {
+    try {
+      const sig = await connection.requestAirdrop(payer.publicKey, Math.ceil(AIRDROP_SOL * LAMPORTS_PER_SOL));
+      await connection.confirmTransaction(sig, 'confirmed');
+    } catch (error) {
+      throw new Error(
+        `Payer ${payer.publicKey.toBase58()} has ${balance} lamports; funding via airdrop failed. ` +
+          `Fund ${PAYER_PATH} manually or set SOLANA_PAYER_KEYPAIR to a funded keypair. ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
   return payer;
 }
@@ -104,6 +116,7 @@ async function main() {
   await sendAndConfirmTransaction(connection, new Transaction().add(createState, initialize), [payer, state]);
 
   const deployment = {
+    cluster: SOLANA_CLUSTER,
     rpcUrl: RPC_URL,
     programId: programId.toBase58(),
     state: state.publicKey.toBase58(),
@@ -111,12 +124,14 @@ async function main() {
     payerKeypair: PAYER_PATH,
     stateSecretKey: Array.from(state.secretKey),
     stateSpace: STATE_SPACE,
-    note: 'Local solana-test-validator deployment for the trusted-relayer OmniETF demo.',
+    note: SOLANA_CLUSTER === 'devnet'
+      ? 'Solana Devnet deployment for the OmniETF trusted-relayer testnet PoC. Private state key is local-only; do not commit generated deployment files.'
+      : 'Local solana-test-validator deployment for the trusted-relayer OmniETF demo.',
   };
-  await writeFile('deployments/svm-local.json', JSON.stringify(deployment, null, 2) + '\n');
+  await writeFile(DEPLOYMENT_FILE, JSON.stringify(deployment, null, 2) + '\n');
   console.log(`SVM program: ${programId.toBase58()}`);
   console.log(`SVM state: ${state.publicKey.toBase58()}`);
-  console.log('Wrote deployments/svm-local.json');
+  console.log(`Wrote ${DEPLOYMENT_FILE}`);
 }
 
 main().catch((error) => {

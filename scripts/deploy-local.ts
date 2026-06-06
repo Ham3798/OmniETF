@@ -1,16 +1,20 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createPublicClient, createWalletClient, http, parseUnits, type Abi } from 'viem';
+import { createPublicClient, createWalletClient, defineChain, http, type Abi, type Chain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { foundry } from 'viem/chains';
+import { baseSepolia, foundry } from 'viem/chains';
 
 const RPC_URL = process.env.RPC_URL ?? 'http://127.0.0.1:8545';
+const DEFAULT_ANVIL_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const DEPLOYER_PRIVATE_KEY =
-  (process.env.DEPLOYER_PRIVATE_KEY as `0x${string}` | undefined) ??
-  '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+  (process.env.DEPLOYER_PRIVATE_KEY as `0x${string}` | undefined) ?? DEFAULT_ANVIL_PRIVATE_KEY;
+const EXPECTED_CHAIN_ID = Number(process.env.EXPECTED_CHAIN_ID ?? 31337);
+const CHAIN_NAME = process.env.CHAIN_NAME ?? (EXPECTED_CHAIN_ID === 84532 ? 'base-sepolia' : 'local');
+const DEPLOYMENT_FILE = process.env.DEPLOYMENT_FILE ?? 'deployments/local.json';
 const WAD = 10n ** 18n;
 const USDC = 10n ** 6n;
 const BRIDGE_MODE = process.env.BRIDGE_MODE ?? 'mock';
+const SEED_DEMO_USDC = process.env.SEED_DEMO_USDC !== '0';
 
 const ASSETS = {
   AAPLX: '0x4141504c78000000000000000000000000000000000000000000000000000000',
@@ -23,19 +27,35 @@ type Artifact = {
   bytecode: { object: `0x${string}` };
 };
 
+function chainFor(chainId: number): Chain {
+  if (chainId === foundry.id) return foundry;
+  if (chainId === baseSepolia.id) return baseSepolia;
+  return defineChain({
+    id: chainId,
+    name: CHAIN_NAME,
+    nativeCurrency: { name: 'Native', symbol: 'NATIVE', decimals: 18 },
+    rpcUrls: { default: { http: [RPC_URL] } },
+  });
+}
+
 async function artifact(contractFile: string, contractName: string): Promise<Artifact> {
   const artifactPath = join('contracts', 'out', contractFile, `${contractName}.json`);
   return JSON.parse(await readFile(artifactPath, 'utf8')) as Artifact;
 }
 
 async function main() {
+  if (EXPECTED_CHAIN_ID !== 31337 && DEPLOYER_PRIVATE_KEY === DEFAULT_ANVIL_PRIVATE_KEY) {
+    throw new Error('DEPLOYER_PRIVATE_KEY must be set for non-local deployments; refusing to use the public Anvil key.');
+  }
+
   const account = privateKeyToAccount(DEPLOYER_PRIVATE_KEY);
-  const publicClient = createPublicClient({ chain: foundry, transport: http(RPC_URL) });
-  const walletClient = createWalletClient({ account, chain: foundry, transport: http(RPC_URL) });
+  const expectedChain = chainFor(EXPECTED_CHAIN_ID);
+  const publicClient = createPublicClient({ chain: expectedChain, transport: http(RPC_URL) });
+  const walletClient = createWalletClient({ account, chain: expectedChain, transport: http(RPC_URL) });
 
   const chainId = await publicClient.getChainId();
-  if (chainId !== 31337) {
-    throw new Error(`Expected Anvil chain id 31337, got ${chainId}`);
+  if (chainId !== EXPECTED_CHAIN_ID) {
+    throw new Error(`Expected chain id ${EXPECTED_CHAIN_ID}, got ${chainId}`);
   }
 
   const mockUsdc = await artifact('MockUSDC.sol', 'MockUSDC');
@@ -110,10 +130,12 @@ async function main() {
   const setupCalls: Array<[address: `0x${string}`, abi: Abi, functionName: string, args: readonly unknown[]]> = [
     [shareAddress, share.abi, 'setManager', [managerAddress]],
     [managerAddress, manager.abi, 'setBridge', [bridgeAddress]],
-    [usdcAddress, mockUsdc.abi, 'mint', [account.address, 1_000n * USDC]],
   ];
   if (portfolioAddress) {
-    setupCalls.splice(2, 0, [portfolioAddress, portfolio.abi, 'setExecutor', [bridgeAddress]]);
+    setupCalls.push([portfolioAddress, portfolio.abi, 'setExecutor', [bridgeAddress]]);
+  }
+  if (SEED_DEMO_USDC) {
+    setupCalls.push([usdcAddress, mockUsdc.abi, 'mint', [account.address, 1_000n * USDC]]);
   }
 
   for (const [address, abi, functionName, args] of setupCalls) {
@@ -123,14 +145,21 @@ async function main() {
 
   await mkdir('deployments', { recursive: true });
   const deployment = {
+    chainName: CHAIN_NAME,
     chainId,
     rpcUrl: RPC_URL,
     deployer: account.address,
     demoUser: account.address,
-    demoPrivateKey: DEPLOYER_PRIVATE_KEY,
+    ...(chainId === 31337
+      ? {
+          demoPrivateKey: DEPLOYER_PRIVATE_KEY,
+          note: 'Local Anvil demo deployment. Private key is the public default Anvil key; never use it outside local demos.',
+        }
+      : {
+          note: 'Public testnet deployment. Private keys are intentionally not written; set DEPLOYER_PRIVATE_KEY when running relayer/smoke scripts.',
+        }),
     mode: BRIDGE_MODE,
     bridgeContractName,
-    note: 'Local Anvil demo deployment. Private key is the public default Anvil key; never use it outside local demos.',
     assets: ASSETS,
     contracts: {
       MockUSDC: usdcAddress,
@@ -142,8 +171,8 @@ async function main() {
       bridge: bridgeAddress,
     },
   };
-  await writeFile('deployments/local.json', JSON.stringify(deployment, null, 2) + '\n');
-  console.log('Wrote deployments/local.json');
+  await writeFile(DEPLOYMENT_FILE, JSON.stringify(deployment, null, 2) + '\n');
+  console.log(`Wrote ${DEPLOYMENT_FILE}`);
 }
 
 main().catch((error) => {
