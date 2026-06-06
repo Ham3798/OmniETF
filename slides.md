@@ -112,7 +112,7 @@ layout: section
 # 1. Abstract
 
 OmniETF는 cross-chain 자산 운용에서  
-사용자가 하나의 share만으로 basket exposure를 보유하고  
+사용자가 USDC를 가지고, 하나의 share로 basket exposure를 보유하고  
 환매할 수 있는 구조를 실험합니다.
 
 ---
@@ -121,10 +121,10 @@ layout: default
 
 # Abstract
 
-현재 멀티체인 환경에서는 자산, 유동성, 실행 상태가 체인별로 분리되어 있습니다.
+현재 멀티체인 환경이더라도 자산, 유동성, 실행 상태가 체인별로 분리되어 있습니다.
 
 하지만 사용자는 여러 체인의 잔고를 직접 추적하기보다  
-하나의 포트폴리오, 하나의 NAV, 하나의 환매 권리를 원합니다.
+하나의 자산, 하나의 네트워크로 포트폴리오, 하나의 NAV, 하나의 환매 권리를 가진다면 보다 효율적으로 자산을 운용할 수 있습니다. 
 
 OmniETF는 이 문제를 해결하기 위해:
 
@@ -145,7 +145,7 @@ layout: section
 # 2. Background
 
 자산은 멀티체인화됐지만  
-portfolio accounting은 아직 사용자에게 떠넘겨져 있습니다.
+portfolio accounting은 아직 사용자에게 떠넘겨져 있습니다. 
 
 ---
 layout: default
@@ -159,7 +159,7 @@ layout: default
 - 사용자는 bridge, wallet, explorer, portfolio tracker를 오가야 함
 
 <div class="mt-8 big-claim">
-문제는 "어떻게 옮길까"보다<br/>"무엇을 하나로 보여줄까"입니다.
+문제는 "어떻게 자산을 세분화해서 옮길까"보다<br/>"무엇을 하나의자산군으로 하나의 ETF형태로 보여줄까"입니다.
 </div>
 
 <!--
@@ -174,6 +174,7 @@ layout: default
 
 멀티체인 포트폴리오에서 사용자가 원하는 것은  
 여러 chain state의 나열이 아니라 **단일한 청구권**입니다.
+즉, 한번의 트랜잭션으로 여러 자산군에 대한 포지션을 구축하고, 한번의 트랜잭션으로 이를 정리할 수 있습니다.
 
 | 분리된 상태 | 사용자가 원하는 상태 |
 |---|---|
@@ -258,7 +259,7 @@ layout: default
 - 사용자가 explorer에서 상태를 확인 가능
 
 <div class="mt-8 source">
-이 프로젝트의 핵심은 금융 상품 출시가 아니라, cross-chain accounting state machine 검증입니다.
+이 프로젝트의 핵심은 하나의 금융 상품 출시보다는, cross-chain accounting state machine 검증입니다.
 </div>
 
 ---
@@ -317,7 +318,7 @@ layout: default
 | redeem settlement가 지연 | burn/escrow 이후 payout timing이 불명확 |
 
 <div class="mt-8 big-claim">
-그래서 핵심은 빠른 mint가 아니라<br/>언제 mint해도 되는지 증명하는 것입니다.
+그래서 핵심은 빠른 mint가 아니라<br/>언제 mint해도 되는지 증명하는 것입니다. 즉, 포지션에 대해 자유를 부여하는 것 입니다. 
 </div>
 
 ---
@@ -340,7 +341,28 @@ layout: section
 
 Base는 share accounting,  
 Solana는 reserve execution,  
-CCTP/CCIP는 settlement-control rail입니다.
+CCTP는 settlement-control rail입니다.
+
+---
+layout: default
+
+# Trust Model — Who / What / Assumptions
+
+이 프로토콜이 제대로 동작할려면 특정 핵심 기술을 신뢰를 바탕이 되어야 합니다.
+아래는 핵심 신뢰 기술을 정리했습니다. 
+
+| Actor | Role | Trust / Assumption |
+|---|---|---|
+| CCTP (Circle) | USDC settlement attestation | Circle의 attestation을 settlement finality로 신뢰함 |
+| CCIP (DON) | Control message delivery | 메시지 전달을 신뢰하되 value settlement는 아님 |
+| Reporter | 실행 결과(NAV) 확정자 | PoC에서는 centralized finalizer — 추후 threshold/replicated oracle 필요 |
+| Solana Reserve / Program | custody & execution | 프로그램 로직과 custody가 의도대로 동작한다고 가정 (실패 케이스 존재) |
+| Base Vault | canonical share accounting | 모든 claim/state는 Base vault의 기록을 따름 |
+
+간단한 실패 가정 및 완화:
+- CCTP attestation 지연/실패 → settlement 보류, claim 지연 (증거 타임아웃/rollback 필요)
+- Solana execution 실패 → reporter가 실패로 표시하고 refund/재시도 경로 발생
+- Reporter 지연/악의적 행위 → multisig/threshold reporter로 권한 분산 검토
 
 ---
 layout: default
@@ -350,15 +372,20 @@ layout: default
 
 ```mermaid
 flowchart LR
-  U["User"] -->|"request deposit / redeem"| B["Base\nOmniETF Vault"]
-  B -->|"mETF share"| M["Canonical\nShare Supply"]
-  B -->|"USDC settlement"| C["CCTP"]
-  C --> R["Solana\nReserve Treasury"]
-  R -->|"mock SPL basket"| X["AAPLx / TSLAx / NVDAx"]
-  R -->|"execution snapshot"| P["Reporter"]
-  P -->|"finalize NAV / claimable"| B
-  B -.->|"control proof"| K["CCIP"]
+  U["User"] -->|"1) requestDeposit / requestRedeem"| B["Base\nOmniETF Vault"]
+  B -->|"2) record request"| M["Canonical\nShare Supply"]
+  B -->|"3) trigger CCTP settlement"| C["CCTP"]
+  C -->|"4) settle → Solana USDC"| R["Solana\nReserve Treasury"]
+  R -->|"5) allocate mock SPL basket"| X["AAPLx / TSLAx / NVDAx"]
+  R -->|"6) execution snapshot"| P["Reporter"]
+  P -->|"7) finalize NAV / claimable"| B
+  B -.->|"control proof (CCIP)"| K["CCIP"]
   K -.-> R
+  F["Failure cases<br/>- execution fail<br/>- settlement delay<br/>- reporter delay"]:::failure
+  R -.-> F
+  C -.-> F
+  P -.-> F
+  classDef failure fill:#fee2e2,stroke:#fca5a5;
 ```
 
 <!--
@@ -406,12 +433,17 @@ sequenceDiagram
   participant CCTP
   participant SolanaTreasury
   participant Reporter
-  User->>BaseVault: requestDeposit(USDC)
-  BaseVault->>CCTP: burn / send message
-  CCTP->>SolanaTreasury: mint USDC
-  SolanaTreasury->>SolanaTreasury: allocate basket
-  Reporter->>BaseVault: finalizeDeposit(executedValue)
-  User->>BaseVault: claim mETF
+  User->>BaseVault: 1) requestDeposit(USDC)
+  BaseVault->>CCTP: 2) burn / send message
+  CCTP->>SolanaTreasury: 3) mint USDC
+  SolanaTreasury->>SolanaTreasury: 4) allocate basket
+  alt execution succeeded
+    Reporter->>BaseVault: 5) finalizeDeposit(executedValue)
+    User->>BaseVault: 6) claim mETF
+  else execution failed
+    Reporter->>BaseVault: failure: finalizeDepositFailed()
+    BaseVault->>User: refund or retry path
+  end
 ```
 
 ---
@@ -426,12 +458,16 @@ sequenceDiagram
   participant BaseVault
   participant SolanaTreasury
   participant CCTP
-  User->>BaseVault: requestRedeem(shares)
-  BaseVault->>BaseVault: escrow shares
-  SolanaTreasury->>SolanaTreasury: sell / settle reserve
-  SolanaTreasury->>CCTP: burn USDC
-  CCTP->>BaseVault: mint USDC
-  User->>BaseVault: claimRedeem()
+  User->>BaseVault: 1) requestRedeem(shares)
+  BaseVault->>BaseVault: 2) escrow shares
+  SolanaTreasury->>SolanaTreasury: 3) sell / settle reserve
+  SolanaTreasury->>CCTP: 4) burn USDC
+  CCTP->>BaseVault: 5) mint USDC
+  alt settlement succeeded
+    User->>BaseVault: 6) claimRedeem()
+  else settlement delayed/failed
+    BaseVault->>User: payout pending / wait for evidence
+  end
 ```
 
 ---
@@ -722,7 +758,7 @@ layout: fact
 # 단순 Settlement가 아닙니다
 
 핵심은 토큰을 더 잘 옮기는 것이 아니라  
-멀티체인 reserve가 하나의 금융 객체처럼 동작함을 보이는 것입니다.
+멀티체인 reserve가 ETF처럼 하나의 금융 객체처럼 동작함을 보이는 것입니다.
 
 ---
 layout: default
@@ -730,7 +766,7 @@ layout: default
 
 # 결론
 
-- 사용자는 여러 체인의 잔고가 아니라 하나의 claim surface를 원함
+- 사용자는 여러 체인에서 지갑을 확인하는 번거로운 작업 보다는 하나의 claim surface를 원함
 - OmniETF는 Base share accounting과 Solana reserve execution을 분리
 - CCTP는 USDC settlement, CCIP는 control/test-token evidence
 - 즉시 mint 대신 async request / finalize / claim lifecycle 사용
