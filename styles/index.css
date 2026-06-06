@@ -1,0 +1,66 @@
+:root {
+  --slidev-theme-primary: #0f766e;
+}
+
+.slidev-layout {
+  font-family: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
+  color: #17201f;
+}
+
+.slidev-layout h1 {
+  color: #10201f;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.slidev-layout h2,
+.slidev-layout h3 {
+  color: #17413d;
+  letter-spacing: 0;
+}
+
+.slidev-layout p,
+.slidev-layout li {
+  line-height: 1.55;
+}
+
+.slidev-layout strong {
+  color: #0f766e;
+}
+
+.kicker {
+  color: #0f766e;
+  font-weight: 800;
+  margin-bottom: 1rem;
+}
+
+.big-claim {
+  font-size: 2rem;
+  font-weight: 850;
+  line-height: 1.28;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.source {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.pill {
+  background: #eefaf8;
+  border: 1px solid #99d5cd;
+  border-radius: 8px;
+  color: #0f766e;
+  display: inline-block;
+  font-weight: 750;
+  margin: 0.12rem;
+  padding: 0.24rem 0.64rem;
+}
+
+.slidev-layout .mermaid svg {
+  max-width: 100%;
+  max-height: 500px;
+}

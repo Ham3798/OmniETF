@@ -8,70 +8,6 @@ fonts:
   sans: Apple SD Gothic Neo
 ---
 
-<style>
-:root {
-  --slidev-theme-primary: #0f766e;
-}
-
-.slidev-layout {
-  font-family: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
-  color: #17201f;
-}
-
-.slidev-layout h1 {
-  color: #10201f;
-  letter-spacing: 0;
-  line-height: 1.1;
-}
-
-.slidev-layout h2,
-.slidev-layout h3 {
-  color: #17413d;
-  letter-spacing: 0;
-}
-
-.slidev-layout p,
-.slidev-layout li {
-  line-height: 1.55;
-}
-
-.slidev-layout strong {
-  color: #0f766e;
-}
-
-.kicker {
-  color: #0f766e;
-  font-weight: 800;
-  margin-bottom: 1rem;
-}
-
-.big-claim {
-  font-size: 2rem;
-  font-weight: 850;
-  line-height: 1.28;
-}
-
-.muted {
-  color: #64748b;
-}
-
-.source {
-  color: #64748b;
-  font-size: 0.68rem;
-}
-
-.pill {
-  background: #eefaf8;
-  border: 1px solid #99d5cd;
-  border-radius: 8px;
-  color: #0f766e;
-  display: inline-block;
-  font-weight: 750;
-  margin: 0.12rem;
-  padding: 0.24rem 0.64rem;
-}
-</style>
-
 <div class="kicker">Blockchain Practice Final Presentation</div>
 
 # OmniETF
@@ -415,7 +351,7 @@ layout: default
 
 | 원칙 | 적용 |
 |---|---|
-| mint는 실행 후에만 | `requestDeposit` 시점에는 mETF를 주지 않음 |f
+| mint는 실행 후에만 | `requestDeposit` 시점에는 mETF를 주지 않음 |
 | settlement와 execution 분리 | CCTP 수신과 Solana basket allocation을 별도 stage로 표시 |
 | NAV는 reporter가 확정 | executed value가 Base vault state에 반영되어야 claim 가능 |
 | redeem은 비동기 claim | share escrow 이후 backing USDC가 있을 때 지급 |
@@ -430,23 +366,17 @@ layout: default
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant BV as BaseVault
-  participant CP as CCTP
-  participant ST as SolanaTreasury
+  participant BV as Base Vault
+  participant C as CCTP
+  participant ST as Solana Treasury
   participant R as Reporter
 
-  U->>BV: Step 1 - requestDeposit(USDC)
-  BV->>CP: Step 2 - burn / send message
-  CP->>ST: Step 3 - mint USDC
-  ST->>ST: Step 4 - allocate basket
-
-  alt execution succeeded
-    R->>BV: Step 5 - finalizeDeposit(executedValue)
-    U->>BV: Step 6 - claim mETF
-  else execution failed
-    R->>BV: finalizeDepositFailed()
-    BV->>U: refund or retry path
-  end
+  U->>BV: 1. requestDeposit(USDC)
+  BV->>C: 2. burn USDC
+  C->>ST: 3. mint USDC
+  ST->>R: 4. execution snapshot
+  R->>BV: 5. finalize claimable
+  U->>BV: 6. claim mETF
 ```
 
 ---
@@ -458,21 +388,15 @@ layout: default
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant BV as BaseVault
-  participant ST as SolanaTreasury
-  participant CP as CCTP
+  participant BV as Base Vault
+  participant ST as Solana Treasury
+  participant C as CCTP
 
-  U->>BV: Step 1 - requestRedeem(shares)
-  BV->>BV: Step 2 - escrow shares
-  ST->>ST: Step 3 - sell / settle reserve
-  ST->>CP: Step 4 - burn USDC
-  CP->>BV: Step 5 - mint USDC
-
-  alt settlement succeeded
-    U->>BV: Step 6 - claimRedeem()
-  else settlement delayed or failed
-    BV->>U: payout pending / wait for evidence
-  end
+  U->>BV: 1. requestRedeem + escrow shares
+  BV->>ST: 2. reserve sale intent
+  ST->>C: 3. burn USDC
+  C->>BV: 4. fund payout
+  BV->>U: 5. claim Base USDC
 ```
 
 ---
